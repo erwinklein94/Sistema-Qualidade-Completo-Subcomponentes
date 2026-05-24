@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="description" content="Sistema estático de controle de qualidade de subcomponentes, empresas, estoque e inspeções." />
+  <title>Subcomponentes · Sistema de Qualidade</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <div class="app" id="app">
+    <aside class="sidebar" id="sidebar" aria-label="Menu principal">
+      <div class="sidebar-logo">
+        <div class="marca">rum<span class="o-circ"></span></div>
+        <div class="sub">Somos o Brasil em movimento</div>
+      </div>
+      <nav class="nav" id="nav"></nav>
+      <div class="sidebar-rodape">Sistema de Qualidade<br />Subcomponentes</div>
+    </aside>
+    <div class="backdrop-mobile" id="backdrop" aria-hidden="true"></div>
+
+    <main class="conteudo" id="conteudo">
+      <header class="topo">
+        <div class="topo-titulo-wrap">
+          <button class="btn btn-secundario btn-sm menu-toggle" id="botaoMenu" type="button" aria-controls="sidebar" aria-expanded="false">
+            <span aria-hidden="true">☰</span><span>Menu</span>
+          </button>
+          <div>
+            <h1 id="pageTitle">Subcomponentes</h1>
+            <div class="subtitulo" id="pageSubtitle">Controle de empresas, estoque e inspeções sem importar Excel.</div>
+          </div>
+        </div>
+        <div class="topo-acoes" id="topActions"></div>
+      </header>
+
+      <section class="pagina" id="page">
+        <div class="vazio">
+          <div class="loader"></div>
+          <h3>Carregando sistema</h3>
+          <p>Preparando os registros de subcomponentes.</p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="toast-wrap" id="toastWrap" aria-live="polite" aria-atomic="true"></div>
+  <div class="modal-overlay" id="modalOverlay" aria-hidden="true"></div>
+
+  <script src="js/app.js" defer></script>
+</body>
+</html>
