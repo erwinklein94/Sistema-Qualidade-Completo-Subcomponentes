@@ -6,6 +6,7 @@
 const StoreSubcomponentesSupabase = (() => {
   const TABLES = {
     empresas: 'empresas_subcomponentes',
+    materiais: 'materiais_subcomponentes',
     estoque: 'estoque_subcomponentes',
     inspecoes: 'inspecoes_subcomponentes',
     auditoria: 'auditoria_subcomponentes',
@@ -53,6 +54,43 @@ const StoreSubcomponentesSupabase = (() => {
       contato: clean(r.contato),
       status: clean(r.status) || 'Ativa',
       observacao: clean(r.observacao)
+    };
+  }
+
+
+  function fromMaterial(r) {
+    return {
+      id: r.id,
+      fornecedorId: r.fornecedor_id || '',
+      fornecedorNome: r.fornecedor_nome || '',
+      subcomponente: r.subcomponente || '',
+      codSap: r.cod_sap || '',
+      tipoMaterial: r.tipo_material || 'Subcomponente',
+      criticidade: r.criticidade || 'Média',
+      norma: r.norma || '',
+      planoAmostragem: r.plano_amostragem || '',
+      nivelInspecao: r.nivel_inspecao || '',
+      etm: r.etm || '',
+      criadoEm: r.criado_em || '',
+      atualizadoEm: r.atualizado_em || '',
+      criadoPor: r.criado_por || '',
+      atualizadoPor: r.atualizado_por || ''
+    };
+  }
+
+  function toMaterial(r) {
+    return {
+      id: r.id,
+      fornecedor_id: clean(r.fornecedorId),
+      fornecedor_nome: clean(r.fornecedorNome),
+      subcomponente: clean(r.subcomponente),
+      cod_sap: clean(r.codSap),
+      tipo_material: clean(r.tipoMaterial) || 'Subcomponente',
+      criticidade: clean(r.criticidade) || 'Média',
+      norma: clean(r.norma),
+      plano_amostragem: clean(r.planoAmostragem),
+      nivel_inspecao: clean(r.nivelInspecao),
+      etm: clean(r.etm)
     };
   }
 
@@ -190,8 +228,9 @@ const StoreSubcomponentesSupabase = (() => {
   }
 
   async function carregarDb() {
-    const [empresas, estoque, inspecoes] = await Promise.all([
+    const [empresas, materiais, estoque, inspecoes] = await Promise.all([
       selectAll(TABLES.empresas, 'nome', true),
+      selectAll(TABLES.materiais, 'subcomponente', true),
       selectAll(TABLES.estoque, 'data', false),
       selectAll(TABLES.inspecoes, 'dia_inspecao', false)
     ]);
@@ -204,6 +243,7 @@ const StoreSubcomponentesSupabase = (() => {
         updatedAt: new Date().toISOString()
       },
       empresas: empresas.map(fromEmpresa),
+      materiais: materiais.map(fromMaterial),
       estoque: estoque.map(fromEstoque),
       inspecoes: inspecoes.map(fromInspecao)
     });
@@ -222,6 +262,7 @@ const StoreSubcomponentesSupabase = (() => {
   async function salvarDb(stateDb) {
     const normalized = normalizeDb(stateDb);
     await upsertMany(TABLES.empresas, normalized.empresas.map(toEmpresa));
+    await upsertMany(TABLES.materiais, normalized.materiais.map(toMaterial));
     await upsertMany(TABLES.estoque, normalized.estoque.map(toEstoque));
     await upsertMany(TABLES.inspecoes, normalized.inspecoes.map(toInspecao));
     return true;
@@ -230,6 +271,7 @@ const StoreSubcomponentesSupabase = (() => {
   async function salvarRegistro(type, record) {
     const config = {
       empresa: { table: TABLES.empresas, map: toEmpresa },
+      material: { table: TABLES.materiais, map: toMaterial },
       estoque: { table: TABLES.estoque, map: toEstoque },
       inspecao: { table: TABLES.inspecoes, map: toInspecao }
     }[type];
@@ -244,7 +286,7 @@ const StoreSubcomponentesSupabase = (() => {
   }
 
   async function remover(type, id) {
-    const table = { empresa: TABLES.empresas, estoque: TABLES.estoque, inspecao: TABLES.inspecoes }[type];
+    const table = { empresa: TABLES.empresas, material: TABLES.materiais, estoque: TABLES.estoque, inspecao: TABLES.inspecoes }[type];
     if (!table || !id) return true;
     const { error } = await db().from(table).delete().eq('id', id);
     if (error) throw error;

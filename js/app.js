@@ -10,6 +10,7 @@ const NAV = [
   { key: 'cards', title: 'Cards por subcomponente', icon: '◇' },
   { sec: 'Cadastros' },
   { key: 'empresas', title: 'Empresas', icon: '⌂' },
+  { key: 'materiais', title: 'Materiais', icon: '▣' },
   { key: 'estoque', title: 'Estoque', icon: '⇄' },
   { key: 'inspecoes', title: 'Inspeções realizadas', icon: '✓' },
   { sec: 'Sistema' },
@@ -22,6 +23,7 @@ const PAGE_COPY = {
   dashboard: ['Dashboard geral', 'Visão consolidada de saldo, inspeções, NC e pendências por subcomponente.'],
   cards: ['Cards por subcomponente', 'Resumo visual por material com saldo, lotes, inspeções e não conformidades.'],
   empresas: ['Empresas', 'Cadastro de fábricas e fornecedores vinculados aos subcomponentes.'],
+  materiais: ['Materiais', 'Cadastro técnico dos subcomponentes, normas, planos de amostragem e ETM.'],
   estoque: ['Estoque de subcomponentes', 'Lançamento e controle dos lotes em estoque, sem importação de planilha.'],
   inspecoes: ['Inspeções realizadas', 'Registro de inspeções por lote/BAG, fornecedor e status de aprovação.'],
   dados: ['Dados e backup', 'Exportação de segurança dos dados salvos no Supabase.'],
@@ -34,13 +36,17 @@ const STATUS_INSPECAO = ['Aprovado', 'Aprovado com ressalva', 'Reprovado', 'Pend
 const STATUS_EMPRESA = ['Ativa', 'Em avaliação', 'Bloqueada', 'Inativa'];
 const TIPOS_EMPRESA = ['Fornecedor', 'Fábrica', 'Fornecedor e fábrica', 'Cliente', 'Outro'];
 const PERFIS_USUARIO = ['admin', 'qualidade', 'consulta'];
+const TIPOS_MATERIAL = ['Subcomponente', 'Matéria-prima', 'Componente comercial', 'Consumível', 'Outro'];
+const CRITICIDADES_MATERIAL = ['Alta', 'Média', 'Baixa'];
+const NIVEIS_INSPECAO = ['Geral I', 'Geral II', 'Geral III', 'Especial S-1', 'Especial S-2', 'Especial S-3', 'Especial S-4'];
 
 let state = {
   active: 'dashboard',
   db: emptyDb(),
   filters: {
-    dashboard: { component: '', status: '', hasNc: '', empresa: '', search: '' },
+    dashboard: { dateStart: '', dateEnd: '', component: '', status: '', hasNc: '', empresa: '', search: '' },
     empresas: { status: '', tipo: '', search: '' },
+    materiais: { fornecedor: '', tipo: '', criticidade: '', search: '' },
     estoque: { component: '', empresa: '', status: '', search: '' },
     inspecoes: { material: '', empresa: '', status: '', semana: '', search: '' },
     cards: { query: '', hasNc: '', hasStock: '', empresa: '' },
@@ -61,6 +67,7 @@ function emptyDb() {
       source: 'Sistema iniciado no navegador'
     },
     empresas: [],
+    materiais: [],
     estoque: [],
     inspecoes: []
   };
@@ -121,6 +128,7 @@ function dataHoraBR(iso) {
 function tabelaLabel(tabela) {
   return ({
     empresas_subcomponentes: 'Empresas',
+    materiais_subcomponentes: 'Materiais',
     estoque_subcomponentes: 'Estoque',
     inspecoes_subcomponentes: 'Inspeções',
     usuarios_app: 'Usuários'
@@ -148,6 +156,37 @@ function dataBR(iso) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) return text(iso);
   const [y, m, d] = s.split('-');
   return `${d}/${m}/${y}`;
+}
+
+function validIsoDate(value) {
+  const s = String(value || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : '';
+}
+
+function dateInRange(value, start = '', end = '') {
+  const inicio = validIsoDate(start);
+  const fim = validIsoDate(end);
+  if (!inicio && !fim) return true;
+  const data = validIsoDate(value);
+  if (!data) return false;
+  if (inicio && data < inicio) return false;
+  if (fim && data > fim) return false;
+  return true;
+}
+
+function dashboardPeriodoAtivo() {
+  const f = state.filters.dashboard || {};
+  return Boolean(validIsoDate(f.dateStart) || validIsoDate(f.dateEnd));
+}
+
+function dashboardPeriodoLabel() {
+  const f = state.filters.dashboard || {};
+  const inicio = validIsoDate(f.dateStart);
+  const fim = validIsoDate(f.dateEnd);
+  if (inicio && fim) return `Período: ${dataBR(inicio)} a ${dataBR(fim)}`;
+  if (inicio) return `Período: a partir de ${dataBR(inicio)}`;
+  if (fim) return `Período: até ${dataBR(fim)}`;
+  return 'Todos os períodos';
 }
 
 function isoWeek(dateIso) {
@@ -236,6 +275,7 @@ const App = {
     $('#quickStock')?.addEventListener('click', () => openModal('estoque'));
     $('#quickInspection')?.addEventListener('click', () => openModal('inspecao'));
     $('#quickCompany')?.addEventListener('click', () => openModal('empresa'));
+    $('#quickMaterial')?.addEventListener('click', () => openModal('material'));
     window.Auth?.montarStatusUsuario?.();
   },
   toggleMenu() {
@@ -464,6 +504,20 @@ function normalizeDb(input) {
     observacao: text(r.observacao || r.obs, '')
   })).filter((r) => r.nome);
 
+  if (input && Array.isArray(input.materiais)) db.materiais = input.materiais.map((r) => ({
+    id: r.id || uid('MAT'),
+    fornecedorId: text(r.fornecedorId || r.empresaId, ''),
+    fornecedorNome: text(r.fornecedorNome || r.empresaNome || r.fornecedor, ''),
+    subcomponente: text(r.subcomponente || r.material, ''),
+    codSap: text(r.codSap || r.codigoSap, ''),
+    tipoMaterial: text(r.tipoMaterial || r.tipo, 'Subcomponente'),
+    criticidade: text(r.criticidade, 'Média'),
+    norma: text(r.norma, ''),
+    planoAmostragem: text(r.planoAmostragem || r.plano_amostragem, ''),
+    nivelInspecao: text(r.nivelInspecao || r.nivel_inspecao, ''),
+    etm: text(r.etm || r.ETM, '')
+  })).filter((r) => r.subcomponente || r.codSap);
+
   if (input && Array.isArray(input.estoque)) db.estoque = input.estoque.map((r) => ({
     id: r.id || uid('EST'),
     data: normalizeDate(r.data),
@@ -516,6 +570,10 @@ function ensureCompaniesForRecords(db) {
     }
     return byName.get(k).id;
   };
+  db.materiais.forEach((r) => {
+    if (!r.fornecedorId) r.fornecedorId = ensure(r.fornecedorNome, 'Fornecedor');
+    r.fornecedorNome = empresaNomeById(db, r.fornecedorId) || r.fornecedorNome;
+  });
   db.estoque.forEach((r) => {
     if (!r.empresaId) r.empresaId = ensure(r.empresaNome, 'Fábrica');
     r.empresaNome = empresaNomeById(db, r.empresaId) || r.empresaNome;
@@ -574,11 +632,14 @@ function componentKey(v) { return norm(v).replace(/[^A-Z0-9]+/g, ' ').replace(/\
 function lotKey(v) { return norm(v).replace(/[.\-]/g, '/').replace(/\s+/g, '').replace(/^0+(?=\d)/, '').replace(/\/0+(?=\d)/g, '/') || 'SEM LOTE'; }
 function comparisonKey(component, lote) { return `${componentKey(component)}||${lotKey(lote)}`; }
 
-function buildComparisonRows() {
+function buildComparisonRows(options = {}) {
+  const dateStart = validIsoDate(options.dateStart);
+  const dateEnd = validIsoDate(options.dateEnd);
   const stockMap = new Map();
   const inspectionMap = new Map();
 
   state.db.estoque.forEach((r) => {
+    if (!dateInRange(r.data, dateStart, dateEnd)) return;
     const key = comparisonKey(r.subcomponente, r.lote);
     const empresa = empresaNomeById(state.db, r.empresaId) || r.empresaNome;
     const item = stockMap.get(key) || {
@@ -605,6 +666,7 @@ function buildComparisonRows() {
   });
 
   state.db.inspecoes.forEach((r) => {
+    if (!dateInRange(r.diaInspecao, dateStart, dateEnd)) return;
     const key = comparisonKey(r.subcomponente, r.lote);
     const empresa = empresaNomeById(state.db, r.empresaId) || r.empresaNome;
     const item = inspectionMap.get(key) || {
@@ -693,7 +755,8 @@ function topActions() {
   const actions = canWrite() ? `
     <button class="btn btn-verde btn-sm" id="quickStock" type="button">＋ Estoque</button>
     <button class="btn btn-primario btn-sm" id="quickInspection" type="button">＋ Inspeção</button>
-    <button class="btn btn-secundario btn-sm" id="quickCompany" type="button">＋ Empresa</button>` : '';
+    <button class="btn btn-secundario btn-sm" id="quickCompany" type="button">＋ Empresa</button>
+    <button class="btn btn-secundario btn-sm" id="quickMaterial" type="button">＋ Material</button>` : '';
   return `
     ${actions}
     <button class="btn btn-secundario btn-sm" id="themeBtn" type="button">◐<span>Tema escuro</span></button>
@@ -734,6 +797,7 @@ function render() {
   const views = {
     dashboard: renderDashboard,
     empresas: renderEmpresas,
+    materiais: renderMateriais,
     estoque: renderEstoque,
     inspecoes: renderInspecoes,
     cards: renderCards,
@@ -752,43 +816,54 @@ function render() {
 }
 
 function renderDashboard() {
+  const f = state.filters.dashboard;
   const rows = filteredComparisonRows();
   const allRows = buildComparisonRows();
+  const periodoAtivo = dashboardPeriodoAtivo();
+  const periodoLabel = dashboardPeriodoLabel();
+  const inspecoesFiltradas = inspecoesFromComparisonRows(rows);
   const totalSaldo = rows.reduce((s, r) => s + r.saldoEstoque, 0);
   const totalInspecionado = rows.reduce((s, r) => s + r.qtdInspecionado, 0);
   const totalNc = rows.reduce((s, r) => s + r.qtdNc, 0);
   const pendentes = rows.filter((r) => r.status === 'Pendente de inspeção').length;
   const componentes = unique(rows, (r) => r.component).length;
   const lotes = unique(rows, (r) => r.key).length;
+  const empresasFiltradas = unique(rows.flatMap((r) => r.empresas)).length;
   const status = groupCount(rows, (r) => r.status);
   const estoquePorComp = groupSum(rows, (r) => r.component, (r) => r.saldoEstoque).slice(0, 10);
   const ncPorComp = groupSum(rows, (r) => r.component, (r) => r.qtdNc).filter((d) => d.value > 0).slice(0, 10);
-  const inspPorEmpresa = groupSum(state.db.inspecoes, (r) => empresaNomeById(state.db, r.empresaId) || r.empresaNome, (r) => r.qtdInspecionado).slice(0, 10);
-  const semana = weeklyTrendData(inspecoesFromComparisonRows(rows)).slice(-14);
+  const inspPorEmpresa = groupSum(inspecoesFiltradas, (r) => empresaNomeById(state.db, r.empresaId) || r.empresaNome, (r) => r.qtdInspecionado).slice(0, 10);
+  const semanasBase = weeklyTrendData(inspecoesFiltradas);
+  const semana = periodoAtivo ? semanasBase : semanasBase.slice(-14);
+  const periodoInfo = periodoAtivo
+    ? 'O período filtra entradas de estoque pela data de entrada e inspeções pelo dia da inspeção.'
+    : 'Sem período selecionado: dashboard consolidado com toda a base.';
 
   return `${hero()}
-    <div class="barra-filtros">${dashboardFilters(allRows)}</div>
+    <div class="barra-filtros barra-filtros-dashboard">${dashboardFilters(allRows)}</div>
+    <div class="periodo-dashboard-info"><strong>${esc(periodoLabel)}</strong><span>${esc(periodoInfo)}</span></div>
     <div class="grid-kpi">
       ${kpi('Subcomponentes', fmt(componentes), `${fmt(lotes)} lotes filtrados`, 'var(--azul-claro)')}
-      ${kpi('Saldo em estoque', fmt(totalSaldo), 'saldo atual consolidado', 'var(--verde)')}
-      ${kpi('Inspecionado', fmt(totalInspecionado), `${fmt(state.db.inspecoes.length)} registros`, 'var(--verde-claro)')}
+      ${kpi('Saldo em estoque', fmt(totalSaldo), periodoAtivo ? 'saldo dos lotes no período' : 'saldo atual consolidado', 'var(--verde)')}
+      ${kpi('Inspecionado', fmt(totalInspecionado), `${fmt(inspecoesFiltradas.length)} registros filtrados`, 'var(--verde-claro)')}
       ${kpi('Não conformidades', fmt(totalNc), `taxa ${pct(totalInspecionado ? totalNc / totalInspecionado * 100 : 0)}`, 'var(--amarelo)')}
-      ${kpi('Pendentes', fmt(pendentes), 'lotes com saldo sem inspeção', 'var(--erro)')}
-      ${kpi('Empresas', fmt(state.db.empresas.length), 'fornecedores e fábricas', 'var(--azul-escuro)')}
+      ${kpi('Pendentes', fmt(pendentes), periodoAtivo ? 'lotes pendentes no período' : 'lotes com saldo sem inspeção', 'var(--erro)')}
+      ${kpi('Empresas', fmt(empresasFiltradas), periodoAtivo ? 'empresas nos filtros' : 'empresas nos lotes filtrados', 'var(--azul-escuro)')}
     </div>
     <div class="grid-graficos">
-      ${panel('Estoque por subcomponente', 'Top 10 por saldo atual', barList(estoquePorComp, 'un.'))}
-      ${panel('Status dos lotes', 'Comparativo estoque × inspeção', donut(status))}
-      ${panel('Inspecionado por empresa', 'Top fornecedores/fábricas', barList(inspPorEmpresa, 'un.'))}
-      ${panel('Materiais com NC', 'Subcomponentes com não conformidade', ncPorComp.length ? barList(ncPorComp, 'NC') : empty('Nenhuma NC nos filtros', 'Ajuste os filtros ou registre uma nova inspeção.'))}
-      ${panel('Evolução semanal das inspeções', 'Últimas 14 semanas dos lotes filtrados: volume, NC e registros', weeklyTrendChart(semana), 'span2 painel-evolucao')}
+      ${panel('Estoque por subcomponente', periodoAtivo ? 'Top 10 por saldo no período' : 'Top 10 por saldo atual', barList(estoquePorComp, 'un.'))}
+      ${panel('Status dos lotes', 'Comparativo estoque × inspeção nos filtros', donut(status))}
+      ${panel('Inspecionado por empresa', periodoAtivo ? 'Top fornecedores/fábricas no período' : 'Top fornecedores/fábricas', inspPorEmpresa.length ? barList(inspPorEmpresa, 'un.') : empty('Sem inspeções no período', 'Ajuste as datas ou registre uma inspeção.'))}
+      ${panel('Materiais com NC', 'Subcomponentes com não conformidade nos filtros', ncPorComp.length ? barList(ncPorComp, 'NC') : empty('Nenhuma NC nos filtros', 'Ajuste os filtros ou registre uma nova inspeção.'))}
+      ${panel('Evolução semanal das inspeções', periodoAtivo ? `Semanas dentro do período selecionado` : 'Últimas 14 semanas dos lotes filtrados: volume, NC e registros', weeklyTrendChart(semana), 'span2 painel-evolucao')}
       ${panel('Tabela comparativa por lote', `${fmt(rows.length)} linhas encontradas`, comparisonTable(rows), 'span2')}
     </div>`;
 }
-
 function dashboardFilters(rows) {
   const f = state.filters.dashboard;
   return `
+    <div class="campo"><label>Data inicial</label><input type="date" value="${esc(f.dateStart)}" data-filter="dashboard.dateStart"></div>
+    <div class="campo"><label>Data final</label><input type="date" value="${esc(f.dateEnd)}" data-filter="dashboard.dateEnd"></div>
     <div class="campo"><label>Subcomponente</label><select data-filter="dashboard.component">${optionList(unique(rows, (r) => r.component), f.component, 'Todos')}</select></div>
     <div class="campo"><label>Empresa</label><select data-filter="dashboard.empresa">${optionList(unique(rows.flatMap((r) => r.empresas)), f.empresa, 'Todas')}</select></div>
     <div class="campo"><label>Status</label><select data-filter="dashboard.status">${optionList(unique(rows, (r) => r.status), f.status, 'Todos')}</select></div>
@@ -796,10 +871,9 @@ function dashboardFilters(rows) {
     <div class="campo"><label>Busca</label><input type="search" value="${esc(f.search)}" data-filter="dashboard.search" placeholder="Lote, SAP, observação..."></div>
     <button class="btn btn-secundario" data-clear-filters="dashboard" type="button">Limpar filtros</button>`;
 }
-
 function filteredComparisonRows() {
   const f = state.filters.dashboard;
-  return buildComparisonRows().filter((r) =>
+  return buildComparisonRows({ dateStart: f.dateStart, dateEnd: f.dateEnd }).filter((r) =>
     (!f.component || r.component === f.component) &&
     (!f.empresa || r.empresas.includes(f.empresa)) &&
     (!f.status || r.status === f.status) &&
@@ -851,6 +925,59 @@ function empresaTable(records) {
     const lotes = state.db.estoque.filter((r) => r.empresaId === e.id).length;
     const insps = state.db.inspecoes.filter((r) => r.empresaId === e.id).length;
     return `<tr><td><strong>${esc(e.nome)}</strong></td><td>${esc(e.tipo)}</td><td>${esc(e.cidade)}</td><td>${esc(e.contato)}</td><td>${badge(e.status)}</td><td class="right">${fmt(lotes)}</td><td class="right">${fmt(insps)}</td><td>${esc(e.observacao)}</td>${actionCell('empresa', e.id)}</tr>`;
+  }).join('')}</tbody></table></div>`;
+}
+
+
+function renderMateriais() {
+  const f = state.filters.materiais;
+  const records = state.db.materiais.filter((m) => {
+    const fornecedor = empresaNomeById(state.db, m.fornecedorId) || m.fornecedorNome;
+    return (!f.fornecedor || fornecedor === f.fornecedor) &&
+      (!f.tipo || m.tipoMaterial === f.tipo) &&
+      (!f.criticidade || m.criticidade === f.criticidade) &&
+      matches(`${fornecedor} ${m.subcomponente} ${m.codSap} ${m.tipoMaterial} ${m.criticidade} ${m.norma} ${m.planoAmostragem} ${m.nivelInspecao} ${m.etm}`, f.search);
+  }).sort((a, b) => String(a.subcomponente || '').localeCompare(String(b.subcomponente || ''), 'pt-BR'));
+  const criticos = records.filter((m) => norm(m.criticidade).includes('ALTA')).length;
+  const semEtm = records.filter((m) => !text(m.etm, '')).length;
+  return `${hero()}
+    <div class="toolbar"><div class="contador">${fmt(records.length)} de ${fmt(state.db.materiais.length)} material(is)</div>${canWrite() ? '<button class="btn btn-primario" type="button" data-modal="material">＋ Novo material</button>' : '<span class="badge badge-azul">Perfil consulta: somente leitura</span>'}</div>
+    <div class="grid-kpi">
+      ${kpi('Materiais filtrados', fmt(records.length), 'cadastros técnicos', 'var(--azul-claro)')}
+      ${kpi('Fornecedores', fmt(unique(records, (m) => empresaNomeById(state.db, m.fornecedorId) || m.fornecedorNome).length), 'com material vinculado', 'var(--verde)')}
+      ${kpi('Alta criticidade', fmt(criticos), 'exigem mais atenção', 'var(--erro)')}
+      ${kpi('Sem ETM', fmt(semEtm), 'cadastros para completar', 'var(--amarelo)')}
+    </div>
+    <div class="barra-filtros">${materialFilters(f)}</div>
+    ${panel('Cadastro de materiais', 'Base técnica para padronizar estoque, inspeção, amostragem, norma e ETM.', materialTable(records))}`;
+}
+function materialFilters(f) {
+  const fornecedores = unique(state.db.materiais, (m) => empresaNomeById(state.db, m.fornecedorId) || m.fornecedorNome);
+  const tipos = unique([...TIPOS_MATERIAL, ...state.db.materiais.map((m) => m.tipoMaterial).filter(Boolean)]);
+  const criticidades = unique([...CRITICIDADES_MATERIAL, ...state.db.materiais.map((m) => m.criticidade).filter(Boolean)]);
+  return `
+    <div class="campo"><label>Fornecedor</label><select data-filter="materiais.fornecedor">${optionList(fornecedores, f.fornecedor, 'Todos')}</select></div>
+    <div class="campo"><label>Tipo de material</label><select data-filter="materiais.tipo">${optionList(tipos, f.tipo, 'Todos')}</select></div>
+    <div class="campo"><label>Criticidade</label><select data-filter="materiais.criticidade">${optionList(criticidades, f.criticidade, 'Todas')}</select></div>
+    <div class="campo"><label>Busca</label><input type="search" value="${esc(f.search)}" data-filter="materiais.search" placeholder="Subcomponente, SAP, norma, ETM..."></div>
+    <button class="btn btn-secundario" data-clear-filters="materiais" type="button">Limpar filtros</button>`;
+}
+function materialTable(records) {
+  if (!records.length) return empty('Nenhum material encontrado', 'Cadastre um material ou ajuste os filtros.');
+  return `<div class="tabela-wrap"><table class="tabela"><thead><tr><th>Fornecedor</th><th>Sub-componente</th><th>SAP</th><th>Tipo</th><th>Criticidade</th><th>Norma</th><th>Plano de amostragem</th><th>Nível de inspeção</th><th>ETM</th>${actionHeader()}</tr></thead><tbody>${records.map((m) => {
+    const fornecedor = empresaNomeById(state.db, m.fornecedorId) || m.fornecedorNome;
+    return `<tr>
+      <td>${esc(fornecedor || '—')}</td>
+      <td><strong>${esc(m.subcomponente)}</strong></td>
+      <td>${esc(m.codSap || '—')}</td>
+      <td>${esc(m.tipoMaterial || '—')}</td>
+      <td>${badge(m.criticidade || '—')}</td>
+      <td>${esc(m.norma || '—')}</td>
+      <td>${esc(m.planoAmostragem || '—')}</td>
+      <td>${esc(m.nivelInspecao || '—')}</td>
+      <td>${esc(m.etm || '—')}</td>
+      ${actionCell('material', m.id)}
+    </tr>`;
   }).join('')}</tbody></table></div>`;
 }
 
@@ -1086,13 +1213,14 @@ function renderDados() {
     <div class="aviso-info"><span>ℹ</span><div><strong>Base de dados:</strong> ${DB.usingSupabase() ? 'os cadastros estão sendo lidos e gravados no Supabase para todos os usuários autorizados.' : 'modo local ativo; os dados ficam apenas neste navegador até configurar o Supabase.'}</div></div>
     <div class="grid-kpi">
       ${kpi('Empresas', fmt(state.db.empresas.length), 'cadastros salvos', 'var(--azul-claro)')}
+      ${kpi('Materiais', fmt(state.db.materiais.length), 'subcomponentes técnicos', 'var(--azul-escuro)')}
       ${kpi('Estoque', fmt(state.db.estoque.length), 'lotes/entradas', 'var(--verde)')}
       ${kpi('Inspeções', fmt(state.db.inspecoes.length), 'registros executados', 'var(--verde-claro)')}
       ${kpi('Tamanho da base', `${(bytes / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} KB`, storageLabel, 'var(--amarelo)')}
     </div>
     <div class="grid-graficos">
-      ${panel('Backup dos dados', 'Baixe cópias somente para conferência e segurança. A importação/restauração pelo site está desativada.', `<div class="form-acoes" style="justify-content:flex-start;margin-top:0"><button class="btn btn-primario" type="button" id="downloadJson">Baixar backup JSON</button><button class="btn btn-secundario" type="button" id="downloadCsvEstoque">CSV estoque</button><button class="btn btn-secundario" type="button" id="downloadCsvInspecoes">CSV inspeções</button></div>`)}
-      ${panel('Operação protegida', 'Para proteger os dados da empresa, o site não permite importar JSON, restaurar base inicial ou limpar todos os registros em massa. Daqui para frente, os usuários devem cadastrar, editar ou excluir registros individualmente nas telas de Empresas, Estoque e Inspeções.', `<div class="aviso-info"><span>🔒</span><div><strong>Importação e restauração desativadas.</strong><br>Os dados já gravados no Supabase permanecem intactos.<br><strong>Seu perfil atual:</strong> ${perfilLabel(perfilAtualNome())}.</div></div>`)}
+      ${panel('Backup dos dados', 'Baixe cópias somente para conferência e segurança. A importação/restauração pelo site está desativada.', `<div class="form-acoes" style="justify-content:flex-start;margin-top:0"><button class="btn btn-primario" type="button" id="downloadJson">Baixar backup JSON</button><button class="btn btn-secundario" type="button" id="downloadCsvMateriais">CSV materiais</button><button class="btn btn-secundario" type="button" id="downloadCsvEstoque">CSV estoque</button><button class="btn btn-secundario" type="button" id="downloadCsvInspecoes">CSV inspeções</button></div>`)}
+      ${panel('Operação protegida', 'Para proteger os dados da empresa, o site não permite importar JSON, restaurar base inicial ou limpar todos os registros em massa. Daqui para frente, os usuários devem cadastrar, editar ou excluir registros individualmente nas telas de Empresas, Materiais, Estoque e Inspeções.', `<div class="aviso-info"><span>🔒</span><div><strong>Importação e restauração desativadas.</strong><br>Os dados já gravados no Supabase permanecem intactos.<br><strong>Seu perfil atual:</strong> ${perfilLabel(perfilAtualNome())}.</div></div>`)}
     </div>`;
 }
 
@@ -1121,7 +1249,11 @@ function donut(data) {
 function inspecoesFromComparisonRows(rows) {
   if (!rows.length) return [];
   const keys = new Set(rows.map((r) => r.key));
-  return state.db.inspecoes.filter((r) => keys.has(comparisonKey(r.subcomponente, r.lote)));
+  const f = state.filters.dashboard || {};
+  return state.db.inspecoes.filter((r) =>
+    keys.has(comparisonKey(r.subcomponente, r.lote)) &&
+    dateInRange(r.diaInspecao, f.dateStart, f.dateEnd)
+  );
 }
 
 function weeklyTrendData(inspecoes) {
@@ -1221,6 +1353,7 @@ function bindPage() {
   $$('[data-edit]').forEach((btn) => btn.addEventListener('click', () => openModal(btn.dataset.edit, btn.dataset.id)));
   $$('[data-delete]').forEach((btn) => btn.addEventListener('click', () => deleteRecord(btn.dataset.delete, btn.dataset.id)));
   $('#downloadJson')?.addEventListener('click', downloadJson);
+  $('#downloadCsvMateriais')?.addEventListener('click', () => downloadCsv('materiais'));
   $('#downloadCsvEstoque')?.addEventListener('click', () => downloadCsv('estoque'));
   $('#downloadCsvInspecoes')?.addEventListener('click', () => downloadCsv('inspecoes'));
   $('#refreshAudit')?.addEventListener('click', async () => { await DB.loadAudit(); render(); });
@@ -1230,7 +1363,7 @@ function bindPage() {
 
 function openModal(type, id = '') {
   if (type === 'usuario' && !isAdmin()) { App.toast('Somente admin pode gerenciar usuários.', 'erro'); return; }
-  if (['empresa', 'estoque', 'inspecao'].includes(type) && !canWrite()) { App.toast('Seu perfil é de consulta. Você pode visualizar, mas não cadastrar, editar ou excluir.', 'erro'); return; }
+  if (['empresa', 'material', 'estoque', 'inspecao'].includes(type) && !canWrite()) { App.toast('Seu perfil é de consulta. Você pode visualizar, mas não cadastrar, editar ou excluir.', 'erro'); return; }
   state.modal = { type, id };
   const overlay = $('#modalOverlay');
   overlay.classList.add('ativo');
@@ -1259,6 +1392,7 @@ function closeModal() {
 function modalHtml(type, id) {
   const config = {
     empresa: { title: id ? 'Editar empresa' : 'Nova empresa', body: empresaForm(id) },
+    material: { title: id ? 'Editar material' : 'Novo material', body: materialForm(id) },
     estoque: { title: id ? 'Editar lançamento de estoque' : 'Novo lançamento de estoque', body: estoqueForm(id) },
     inspecao: { title: id ? 'Editar inspeção' : 'Nova inspeção', body: inspecaoForm(id) },
     usuario: { title: id ? 'Editar perfil de usuário' : 'Novo perfil de usuário', body: usuarioForm(id) }
@@ -1278,6 +1412,27 @@ function textareaField(label, name, value = '') {
 function datalistEmpresas() {
   return `<datalist id="empresasList">${state.db.empresas.map((e) => `<option value="${esc(e.nome)}"></option>`).join('')}</datalist>`;
 }
+
+function datalistMateriais() {
+  const nomes = unique(state.db.materiais, (m) => m.subcomponente);
+  const codigos = unique(state.db.materiais, (m) => m.codSap);
+  return `<datalist id="materiaisList">${nomes.map((nome) => `<option value="${esc(nome)}"></option>`).join('')}</datalist><datalist id="codSapList">${codigos.map((cod) => `<option value="${esc(cod)}"></option>`).join('')}</datalist>`;
+}
+function materialForm(id) {
+  const r = state.db.materiais.find((m) => m.id === id) || { fornecedorId: '', fornecedorNome: '', subcomponente: '', codSap: '', tipoMaterial: 'Subcomponente', criticidade: 'Média', norma: '', planoAmostragem: '', nivelInspecao: '', etm: '' };
+  const fornecedor = empresaNomeById(state.db, r.fornecedorId) || r.fornecedorNome;
+  return `${datalistEmpresas()}${datalistMateriais()}<div class="form-grid">
+    ${field('Fornecedor *', 'fornecedorNome', fornecedor, 'text', 'list="empresasList" required')}
+    ${field('Sub-componente *', 'subcomponente', r.subcomponente, 'text', 'required')}
+    ${field('Código SAP', 'codSap', r.codSap, 'text', 'list="codSapList"')}
+    ${selectField('Tipo de material', 'tipoMaterial', TIPOS_MATERIAL, r.tipoMaterial || 'Subcomponente')}
+    ${selectField('Criticidade', 'criticidade', CRITICIDADES_MATERIAL, r.criticidade || 'Média')}
+    ${field('Norma', 'norma', r.norma, 'text', 'placeholder="Ex.: ABNT, AREMA, ETM..."')}
+    ${field('Plano de amostragem', 'planoAmostragem', r.planoAmostragem, 'text', 'placeholder="Ex.: NBR 5426 / Plano simples"')}
+    ${selectField('Nível de inspeção', 'nivelInspecao', NIVEIS_INSPECAO, r.nivelInspecao || '', 'Selecione')}
+    ${field('ETM', 'etm', r.etm, 'text', 'placeholder="Código ou referência da ETM"')}
+  </div>`;
+}
 function empresaForm(id) {
   const r = state.db.empresas.find((e) => e.id === id) || { nome: '', tipo: 'Fornecedor', cidade: '', contato: '', status: 'Ativa', observacao: '' };
   return `<div class="form-grid">
@@ -1292,11 +1447,11 @@ function empresaForm(id) {
 function estoqueForm(id) {
   const r = state.db.estoque.find((e) => e.id === id) || { data: todayIso(), empresaId: '', empresaNome: '', subcomponente: '', codSap: '', lote: '', quantidadeEntrada: '', saldoAtual: '', amostragem: '', statusEstoque: 'Pendente', dataInspecao: '', obs: '' };
   const empresa = empresaNomeById(state.db, r.empresaId) || r.empresaNome;
-  return `${datalistEmpresas()}<div class="form-grid">
+  return `${datalistEmpresas()}${datalistMateriais()}<div class="form-grid">
     ${field('Data de entrada', 'data', r.data, 'date')}
     ${field('Empresa/Fábrica *', 'empresaNome', empresa, 'text', 'list="empresasList" required')}
-    ${field('Subcomponente *', 'subcomponente', r.subcomponente, 'text', 'required')}
-    ${field('Código SAP', 'codSap', r.codSap)}
+    ${field('Subcomponente *', 'subcomponente', r.subcomponente, 'text', 'list="materiaisList" required')}
+    ${field('Código SAP', 'codSap', r.codSap, 'text', 'list="codSapList"')}
     ${field('Lote *', 'lote', r.lote, 'text', 'required')}
     ${field('Quantidade de entrada', 'quantidadeEntrada', r.quantidadeEntrada, 'number', 'min="0" step="1"')}
     ${field('Saldo atual', 'saldoAtual', r.saldoAtual, 'number', 'min="0" step="1"')}
@@ -1309,12 +1464,12 @@ function estoqueForm(id) {
 function inspecaoForm(id) {
   const r = state.db.inspecoes.find((e) => e.id === id) || { diaInspecao: todayIso(), semana: isoWeek(todayIso()), local: '', subcomponente: '', codSap: '', empresaId: '', empresaNome: '', lote: '', qtdEstoque: '', qtdAmostra: '', qtdInspecionado: '', qtdNc: 0, status: 'Aprovado', observacao: '' };
   const empresa = empresaNomeById(state.db, r.empresaId) || r.empresaNome;
-  return `${datalistEmpresas()}<div class="form-grid">
+  return `${datalistEmpresas()}${datalistMateriais()}<div class="form-grid">
     ${field('Dia da inspeção', 'diaInspecao', r.diaInspecao, 'date')}
     <div class="campo"><label>Semana</label><input id="modalSemana" type="text" name="semana" value="${esc(r.semana)}" placeholder="2026-S21"></div>
     ${field('Local', 'local', r.local)}
-    ${field('Subcomponente/Material *', 'subcomponente', r.subcomponente, 'text', 'required')}
-    ${field('Código SAP', 'codSap', r.codSap)}
+    ${field('Subcomponente/Material *', 'subcomponente', r.subcomponente, 'text', 'list="materiaisList" required')}
+    ${field('Código SAP', 'codSap', r.codSap, 'text', 'list="codSapList"')}
     ${field('Fornecedor/Empresa *', 'empresaNome', empresa, 'text', 'list="empresasList" required')}
     ${field('Lote/BAG *', 'lote', r.lote, 'text', 'required')}
     ${field('QTD Estoque', 'qtdEstoque', r.qtdEstoque, 'number', 'min="0" step="1"')}
@@ -1352,6 +1507,7 @@ async function saveModal(ev) {
     if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
     let registroSalvo = null;
     if (type === 'empresa') registroSalvo = saveEmpresa(data, id);
+    if (type === 'material') registroSalvo = saveMaterial(data, id);
     if (type === 'estoque') registroSalvo = saveEstoque(data, id);
     if (type === 'inspecao') registroSalvo = saveInspecao(data, id);
     if (type === 'usuario') { await saveUsuarioPerfil(data, id); closeModal(); render(); App.toast(id ? 'Usuário atualizado com sucesso.' : 'Perfil de usuário cadastrado com sucesso.'); return; }
@@ -1400,6 +1556,27 @@ function saveEmpresa(data, id) {
   syncCompanyNames();
   return target;
 }
+
+function saveMaterial(data, id) {
+  const fornecedorId = companyIdFromName(data.fornecedorNome);
+  const target = state.db.materiais.find((m) => m.id === id) || { id: uid('MAT') };
+  Object.assign(target, {
+    fornecedorId,
+    fornecedorNome: text(data.fornecedorNome, ''),
+    subcomponente: text(data.subcomponente, ''),
+    codSap: text(data.codSap, ''),
+    tipoMaterial: text(data.tipoMaterial, 'Subcomponente'),
+    criticidade: text(data.criticidade, 'Média'),
+    norma: text(data.norma, ''),
+    planoAmostragem: text(data.planoAmostragem, ''),
+    nivelInspecao: text(data.nivelInspecao, ''),
+    etm: text(data.etm, '')
+  });
+  if (!id) state.db.materiais.push(target);
+  syncCompanyNames();
+  return target;
+}
+
 function saveEstoque(data, id) {
   const empresaId = companyIdFromName(data.empresaNome);
   const target = state.db.estoque.find((e) => e.id === id) || { id: uid('EST') };
@@ -1443,22 +1620,25 @@ function saveInspecao(data, id) {
   return target;
 }
 function syncCompanyNames() {
+  state.db.materiais.forEach((r) => { r.fornecedorNome = empresaNomeById(state.db, r.fornecedorId) || r.fornecedorNome; });
   state.db.estoque.forEach((r) => { r.empresaNome = empresaNomeById(state.db, r.empresaId) || r.empresaNome; });
   state.db.inspecoes.forEach((r) => { r.empresaNome = empresaNomeById(state.db, r.empresaId) || r.empresaNome; });
 }
 
 async function deleteRecord(type, id) {
   if (!canWrite()) { App.toast('Seu perfil é de consulta. Você não pode excluir registros.', 'erro'); return; }
-  const labels = { empresa: 'empresa', estoque: 'registro de estoque', inspecao: 'inspeção' };
+  const labels = { empresa: 'empresa', material: 'material', estoque: 'registro de estoque', inspecao: 'inspeção' };
   if (!confirm(`Excluir este ${labels[type]}? Esta ação não pode ser desfeita.`)) return;
   try {
     if (type === 'empresa') {
-      const used = state.db.estoque.some((r) => r.empresaId === id) || state.db.inspecoes.some((r) => r.empresaId === id);
+      const used = state.db.materiais.some((r) => r.fornecedorId === id) || state.db.estoque.some((r) => r.empresaId === id) || state.db.inspecoes.some((r) => r.empresaId === id);
       if (used && !confirm('Esta empresa está vinculada a estoque/inspeções. Excluir mesmo assim? Os registros manterão apenas o nome salvo.')) return;
       state.db.empresas = state.db.empresas.filter((e) => e.id !== id);
+      state.db.materiais.forEach((r) => { if (r.fornecedorId === id) r.fornecedorId = ''; });
       state.db.estoque.forEach((r) => { if (r.empresaId === id) r.empresaId = ''; });
       state.db.inspecoes.forEach((r) => { if (r.empresaId === id) r.empresaId = ''; });
     }
+    if (type === 'material') state.db.materiais = state.db.materiais.filter((r) => r.id !== id);
     if (type === 'estoque') state.db.estoque = state.db.estoque.filter((r) => r.id !== id);
     if (type === 'inspecao') state.db.inspecoes = state.db.inspecoes.filter((r) => r.id !== id);
     await DB.remove(type, id);
@@ -1492,6 +1672,12 @@ function toCsv(rows, headers) {
   return [headers.map((h) => csvEscape(h.label)).join(';'), ...rows.map((r) => headers.map((h) => csvEscape(h.get(r))).join(';'))].join('\n');
 }
 function downloadCsv(type) {
+  if (type === 'materiais') {
+    const csv = toCsv(state.db.materiais, [
+      { label: 'Fornecedor', get: (r) => empresaNomeById(state.db, r.fornecedorId) || r.fornecedorNome }, { label: 'Sub-componente', get: (r) => r.subcomponente }, { label: 'Código SAP', get: (r) => r.codSap }, { label: 'Tipo de material', get: (r) => r.tipoMaterial }, { label: 'Criticidade', get: (r) => r.criticidade }, { label: 'Norma', get: (r) => r.norma }, { label: 'Plano de amostragem', get: (r) => r.planoAmostragem }, { label: 'Nível de inspeção', get: (r) => r.nivelInspecao }, { label: 'ETM', get: (r) => r.etm }
+    ]);
+    download(`materiais-subcomponentes-${todayIso()}.csv`, csv, 'text/csv;charset=utf-8');
+  }
   if (type === 'estoque') {
     const csv = toCsv(state.db.estoque, [
       { label: 'Data', get: (r) => r.data }, { label: 'Empresa', get: (r) => empresaNomeById(state.db, r.empresaId) || r.empresaNome }, { label: 'Subcomponente', get: (r) => r.subcomponente }, { label: 'SAP', get: (r) => r.codSap }, { label: 'Lote', get: (r) => r.lote }, { label: 'Entrada', get: (r) => r.quantidadeEntrada }, { label: 'Saldo', get: (r) => r.saldoAtual }, { label: 'Amostragem', get: (r) => r.amostragem }, { label: 'Status', get: (r) => r.statusEstoque }, { label: 'Obs', get: (r) => r.obs }
@@ -1520,6 +1706,7 @@ function traduzErroBanco(error) {
   if (/row-level security|violates row-level security|permission denied|not authorized/i.test(msg)) return 'Acesso bloqueado pelas regras do Supabase. Confira se o usuário está ativo em usuarios_app e se o perfil permite cadastrar.';
   if (/JWT|session|Auth session missing|Invalid Refresh Token/i.test(msg)) return 'Sua sessão expirou. Saia e entre novamente.';
   if (/Failed to fetch|NetworkError|Load failed|fetch/i.test(msg)) return 'Falha de conexão com o Supabase. Verifique a internet e tente novamente.';
+  if (/materiais_subcomponentes/i.test(msg)) return 'A tabela de materiais ainda não existe. Rode o SQL supabase/2026-05-24-materiais-subcomponentes.sql no Supabase.';
   if (/auditoria_subcomponentes/i.test(msg)) return 'A tabela de auditoria ainda não existe. Rode o SQL supabase/2026-05-24-auditoria-perfis.sql no Supabase.';
   if (/relation .* does not exist|Could not find the table|schema cache/i.test(msg)) return 'As tabelas de subcomponentes ainda não existem no Supabase. Rode o SQL da pasta supabase primeiro.';
   return `Não foi possível concluir: ${msg}`;
