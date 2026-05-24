@@ -6,8 +6,8 @@
    ===================================================================== */
 
 window.SUPABASE_CONFIG = {
-  url: 'https://kqtvtjgvscjbxrfsbjfg.supabase.co',
-  publishableKey: 'sb_publishable_cJSAgmMMzeycNUAsc-UVtQ_5LksyBuu'
+  url: 'https://wnjjmhydggmfdroeekdi.supabase.co',
+  publishableKey: 'sb_publishable_ltMykTUxwzoKqfk0B2rXWA_s8LuN9bG'
 };
 
 (function inicializarSupabase() {
