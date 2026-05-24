@@ -7,7 +7,9 @@ const StoreSubcomponentesSupabase = (() => {
   const TABLES = {
     empresas: 'empresas_subcomponentes',
     estoque: 'estoque_subcomponentes',
-    inspecoes: 'inspecoes_subcomponentes'
+    inspecoes: 'inspecoes_subcomponentes',
+    auditoria: 'auditoria_subcomponentes',
+    usuarios: 'usuarios_app'
   };
 
   function db() {
@@ -34,7 +36,11 @@ const StoreSubcomponentesSupabase = (() => {
       cidade: r.cidade || '',
       contato: r.contato || '',
       status: r.status || 'Ativa',
-      observacao: r.observacao || ''
+      observacao: r.observacao || '',
+      criadoEm: r.criado_em || '',
+      atualizadoEm: r.atualizado_em || '',
+      criadoPor: r.criado_por || '',
+      atualizadoPor: r.atualizado_por || ''
     };
   }
 
@@ -64,7 +70,11 @@ const StoreSubcomponentesSupabase = (() => {
       amostragem: n(r.amostragem),
       statusEstoque: r.status_estoque || 'Pendente',
       dataInspecao: r.data_inspecao || '',
-      obs: r.obs || ''
+      obs: r.obs || '',
+      criadoEm: r.criado_em || '',
+      atualizadoEm: r.atualizado_em || '',
+      criadoPor: r.criado_por || '',
+      atualizadoPor: r.atualizado_por || ''
     };
   }
 
@@ -102,7 +112,11 @@ const StoreSubcomponentesSupabase = (() => {
       qtdInspecionado: n(r.qtd_inspecionado),
       qtdNc: n(r.qtd_nc),
       status: r.status || 'Pendente',
-      observacao: r.observacao || ''
+      observacao: r.observacao || '',
+      criadoEm: r.criado_em || '',
+      atualizadoEm: r.atualizado_em || '',
+      criadoPor: r.criado_por || '',
+      atualizadoPor: r.atualizado_por || ''
     };
   }
 
@@ -123,6 +137,45 @@ const StoreSubcomponentesSupabase = (() => {
       qtd_nc: n(r.qtdNc),
       status: clean(r.status) || 'Pendente',
       observacao: clean(r.observacao)
+    };
+  }
+
+  function fromUsuario(r) {
+    return {
+      id: r.id,
+      nome: r.nome || '',
+      email: r.email || '',
+      perfil: r.perfil || 'consulta',
+      ativo: r.ativo === true,
+      criado_em: r.criado_em || '',
+      atualizado_em: r.atualizado_em || ''
+    };
+  }
+
+  function toUsuario(r) {
+    return {
+      id: clean(r.id),
+      nome: clean(r.nome),
+      email: clean(r.email),
+      perfil: clean(r.perfil) || 'consulta',
+      ativo: r.ativo !== false
+    };
+  }
+
+  function fromAuditoria(r) {
+    return {
+      id: r.id,
+      data_hora: r.data_hora || r.criado_em || '',
+      usuario_id: r.usuario_id || '',
+      usuario_email: r.usuario_email || '',
+      usuario_nome: r.usuario_nome || '',
+      usuario_perfil: r.usuario_perfil || '',
+      acao: r.acao || '',
+      tabela: r.tabela || '',
+      registro_id: r.registro_id || '',
+      resumo: r.resumo || '',
+      dados_antigos: r.dados_antigos || null,
+      dados_novos: r.dados_novos || null
     };
   }
 
@@ -174,6 +227,22 @@ const StoreSubcomponentesSupabase = (() => {
     return true;
   }
 
+  async function salvarRegistro(type, record) {
+    const config = {
+      empresa: { table: TABLES.empresas, map: toEmpresa },
+      estoque: { table: TABLES.estoque, map: toEstoque },
+      inspecao: { table: TABLES.inspecoes, map: toInspecao }
+    }[type];
+    if (!config || !record) throw new Error('Tipo de registro inválido para salvar.');
+    const { data, error } = await db()
+      .from(config.table)
+      .upsert(config.map(record), { onConflict: 'id' })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  }
+
   async function remover(type, id) {
     const table = { empresa: TABLES.empresas, estoque: TABLES.estoque, inspecao: TABLES.inspecoes }[type];
     if (!table || !id) return true;
@@ -182,11 +251,41 @@ const StoreSubcomponentesSupabase = (() => {
     return true;
   }
 
+  async function carregarAuditoria() {
+    const { data, error } = await db()
+      .from(TABLES.auditoria)
+      .select('*')
+      .order('data_hora', { ascending: false })
+      .limit(1000);
+    if (error) throw error;
+    return (data || []).map(fromAuditoria);
+  }
+
+  async function carregarUsuarios() {
+    const { data, error } = await db()
+      .from(TABLES.usuarios)
+      .select('id,nome,email,perfil,ativo,criado_em,atualizado_em')
+      .order('email', { ascending: true, nullsFirst: false })
+      .limit(1000);
+    if (error) throw error;
+    return (data || []).map(fromUsuario);
+  }
+
+  async function salvarUsuario(usuario) {
+    const { data, error } = await db()
+      .from(TABLES.usuarios)
+      .upsert(toUsuario(usuario), { onConflict: 'id' })
+      .select('id,nome,email,perfil,ativo,criado_em,atualizado_em')
+      .single();
+    if (error) throw error;
+    return fromUsuario(data);
+  }
+
   async function limparDb() {
     throw new Error('Limpeza total desativada neste sistema. Exclua registros individualmente pelo site.');
   }
 
-  return { carregarDb, salvarDb, remover };
+  return { carregarDb, salvarDb, salvarRegistro, remover, carregarAuditoria, carregarUsuarios, salvarUsuario, limparDb };
 })();
 
 window.StoreSubcomponentesSupabase = StoreSubcomponentesSupabase;

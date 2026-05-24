@@ -13,7 +13,9 @@ const NAV = [
   { key: 'estoque', title: 'Estoque', icon: '⇄' },
   { key: 'inspecoes', title: 'Inspeções realizadas', icon: '✓' },
   { sec: 'Sistema' },
-  { key: 'dados', title: 'Dados e backup', icon: '⚙' }
+  { key: 'dados', title: 'Dados e backup', icon: '⚙' },
+  { key: 'auditoria', title: 'Auditoria', icon: '◷', adminOnly: true },
+  { key: 'usuarios', title: 'Usuários e perfis', icon: '👥', adminOnly: true }
 ];
 
 const PAGE_COPY = {
@@ -22,13 +24,16 @@ const PAGE_COPY = {
   empresas: ['Empresas', 'Cadastro de fábricas e fornecedores vinculados aos subcomponentes.'],
   estoque: ['Estoque de subcomponentes', 'Lançamento e controle dos lotes em estoque, sem importação de planilha.'],
   inspecoes: ['Inspeções realizadas', 'Registro de inspeções por lote/BAG, fornecedor e status de aprovação.'],
-  dados: ['Dados e backup', 'Exportação de segurança dos dados salvos no Supabase.']
+  dados: ['Dados e backup', 'Exportação de segurança dos dados salvos no Supabase.'],
+  auditoria: ['Auditoria', 'Histórico de cadastros, edições e exclusões feitos no sistema.'],
+  usuarios: ['Usuários e perfis', 'Controle dos perfis admin, qualidade e consulta.']
 };
 
 const STATUS_ESTOQUE = ['Pendente', 'Em análise', 'Inspecionado', 'Fora do estoque'];
 const STATUS_INSPECAO = ['Aprovado', 'Aprovado com ressalva', 'Reprovado', 'Pendente', 'Em análise'];
 const STATUS_EMPRESA = ['Ativa', 'Em avaliação', 'Bloqueada', 'Inativa'];
 const TIPOS_EMPRESA = ['Fornecedor', 'Fábrica', 'Fornecedor e fábrica', 'Cliente', 'Outro'];
+const PERFIS_USUARIO = ['admin', 'qualidade', 'consulta'];
 
 let state = {
   active: 'dashboard',
@@ -38,8 +43,12 @@ let state = {
     empresas: { status: '', tipo: '', search: '' },
     estoque: { component: '', empresa: '', status: '', search: '' },
     inspecoes: { material: '', empresa: '', status: '', semana: '', search: '' },
-    cards: { query: '', hasNc: '', hasStock: '', empresa: '' }
+    cards: { query: '', hasNc: '', hasStock: '', empresa: '' },
+    auditoria: { acao: '', tabela: '', usuario: '', search: '' },
+    usuarios: { perfil: '', ativo: '', search: '' }
   },
+  auditoria: [],
+  usuarios: [],
   modal: null
 };
 
@@ -77,6 +86,61 @@ const pct = (v) => `${(Number.isFinite(v) ? v : 0).toLocaleString('pt-BR', { min
 const uid = (prefix) => `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 const todayIso = () => new Date().toISOString().slice(0, 10);
 const matches = (haystack, query) => !query || norm(haystack).includes(norm(query));
+
+function perfilAtualNome() {
+  return String(window.USUARIO_ATUAL?.perfil?.perfil || '').toLowerCase() || 'consulta';
+}
+function usuarioAtualNome() {
+  const p = window.USUARIO_ATUAL?.perfil || {};
+  return p.nome || p.email || 'Usuário';
+}
+function isAdmin() {
+  return perfilAtualNome() === 'admin';
+}
+function canWrite() {
+  return ['admin', 'qualidade'].includes(perfilAtualNome());
+}
+function perfilLabel(perfil) {
+  const p = String(perfil || '').toLowerCase();
+  if (p === 'admin') return 'ADMIN';
+  if (p === 'qualidade') return 'QUALIDADE';
+  return 'CONSULTA';
+}
+function perfilBadge(perfil) {
+  const p = String(perfil || 'consulta').toLowerCase();
+  const label = perfilLabel(p);
+  const cls = p === 'admin' ? 'badge-reprovado' : p === 'qualidade' ? 'badge-ok' : 'badge-azul';
+  return `<span class="badge ${cls}">${esc(label)}</span>`;
+}
+function dataHoraBR(iso) {
+  if (!iso) return '—';
+  const dt = new Date(iso);
+  if (Number.isNaN(dt.getTime())) return text(iso);
+  return dt.toLocaleString('pt-BR');
+}
+function tabelaLabel(tabela) {
+  return ({
+    empresas_subcomponentes: 'Empresas',
+    estoque_subcomponentes: 'Estoque',
+    inspecoes_subcomponentes: 'Inspeções',
+    usuarios_app: 'Usuários'
+  })[tabela] || text(tabela);
+}
+function acaoLabel(acao) {
+  return ({ INSERT: 'Adicionou', UPDATE: 'Editou', DELETE: 'Excluiu' })[acao] || text(acao);
+}
+function acaoBadge(acao) {
+  const a = String(acao || '').toUpperCase();
+  const cls = a === 'DELETE' ? 'badge-reprovado' : a === 'UPDATE' ? 'badge-amarelo' : 'badge-ok';
+  return `<span class="badge ${cls}">${esc(acaoLabel(a))}</span>`;
+}
+function actionHeader() {
+  return canWrite() ? '<th>Ações</th>' : '';
+}
+function actionCell(type, id) {
+  if (!canWrite()) return '';
+  return `<td class="acoes-cel"><button class="icone-btn" title="Editar" data-edit="${esc(type)}" data-id="${esc(id)}">✎</button><button class="icone-btn del" title="Excluir" data-delete="${esc(type)}" data-id="${esc(id)}">🗑</button></td>`;
+}
 
 function dataBR(iso) {
   if (!iso) return '—';
@@ -148,14 +212,18 @@ const App = {
     });
   },
   renderNav() {
-    $('#nav').innerHTML = NAV.map((item) => {
+    if ((state.active === 'auditoria' || state.active === 'usuarios') && !isAdmin()) state.active = 'dashboard';
+    const items = NAV.filter((item) => !item.adminOnly || isAdmin());
+    $('#nav').innerHTML = items.map((item) => {
       if (item.sec) return `<div class="nav-section-label">${esc(item.sec)}</div>`;
       return `<a href="#${item.key}" data-nav="${item.key}" class="${item.key === state.active ? 'ativo' : ''}"><span>${item.icon}</span><span>${esc(item.title)}</span></a>`;
     }).join('');
-    $$('[data-nav]').forEach((a) => a.addEventListener('click', (ev) => {
+    $$('[data-nav]').forEach((a) => a.addEventListener('click', async (ev) => {
       ev.preventDefault();
       state.active = a.dataset.nav;
       this.closeMenu();
+      if (state.active === 'auditoria') await DB.loadAudit();
+      if (state.active === 'usuarios') await DB.loadUsers();
       render();
     }));
   },
@@ -261,6 +329,42 @@ const DB = {
     }
 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.db));
+  },
+  async loadAdminData() {
+    if (!this.usingSupabase() || !isAdmin() || !window.StoreSubcomponentesSupabase) return;
+    await Promise.all([this.loadAudit(), this.loadUsers()]);
+  },
+  async loadAudit() {
+    if (!this.usingSupabase() || !isAdmin() || !window.StoreSubcomponentesSupabase?.carregarAuditoria) {
+      state.auditoria = [];
+      return;
+    }
+    try {
+      state.auditoria = await window.StoreSubcomponentesSupabase.carregarAuditoria();
+    } catch (error) {
+      console.error('Falha ao carregar auditoria:', error);
+      state.auditoria = [];
+      App.toast(traduzErroBanco(error), 'erro');
+    }
+  },
+  async loadUsers() {
+    if (!this.usingSupabase() || !isAdmin() || !window.StoreSubcomponentesSupabase?.carregarUsuarios) {
+      state.usuarios = [];
+      return;
+    }
+    try {
+      state.usuarios = await window.StoreSubcomponentesSupabase.carregarUsuarios();
+    } catch (error) {
+      console.error('Falha ao carregar usuários:', error);
+      state.usuarios = [];
+      App.toast(traduzErroBanco(error), 'erro');
+    }
+  },
+  async saveUserProfile(usuario) {
+    if (!this.usingSupabase() || !isAdmin() || !window.StoreSubcomponentesSupabase?.salvarUsuario) throw new Error('Somente admin pode gerenciar usuários.');
+    await window.StoreSubcomponentesSupabase.salvarUsuario(usuario);
+    await this.loadUsers();
+    await this.loadAudit();
   },
   async replace() {
     throw new Error('Restauração de backup desativada neste sistema. Cadastre, edite ou exclua registros manualmente.');
@@ -586,10 +690,12 @@ function badge(status) {
 }
 
 function topActions() {
-  return `
+  const actions = canWrite() ? `
     <button class="btn btn-verde btn-sm" id="quickStock" type="button">＋ Estoque</button>
     <button class="btn btn-primario btn-sm" id="quickInspection" type="button">＋ Inspeção</button>
-    <button class="btn btn-secundario btn-sm" id="quickCompany" type="button">＋ Empresa</button>
+    <button class="btn btn-secundario btn-sm" id="quickCompany" type="button">＋ Empresa</button>` : '';
+  return `
+    ${actions}
     <button class="btn btn-secundario btn-sm" id="themeBtn" type="button">◐<span>Tema escuro</span></button>
     ${window.Auth ? '<span class="usuario-auth" id="areaUsuario"></span>' : ''}
   `;
@@ -631,7 +737,9 @@ function render() {
     estoque: renderEstoque,
     inspecoes: renderInspecoes,
     cards: renderCards,
-    dados: renderDados
+    dados: renderDados,
+    auditoria: renderAuditoria,
+    usuarios: renderUsuarios
   };
   try {
     $('#page').innerHTML = (views[state.active] || renderDashboard)();
@@ -722,7 +830,7 @@ function renderEmpresas() {
   ).sort((a, b) => a.nome.localeCompare(b.nome, 'pt-BR'));
   const active = records.filter((e) => e.status === 'Ativa').length;
   return `${hero()}
-    <div class="toolbar"><div class="contador">${fmt(records.length)} de ${fmt(state.db.empresas.length)} empresa(s)</div><button class="btn btn-primario" type="button" data-modal="empresa">＋ Nova empresa</button></div>
+    <div class="toolbar"><div class="contador">${fmt(records.length)} de ${fmt(state.db.empresas.length)} empresa(s)</div>${canWrite() ? '<button class="btn btn-primario" type="button" data-modal="empresa">＋ Nova empresa</button>' : '<span class="badge badge-azul">Perfil consulta: somente leitura</span>'}</div>
     <div class="grid-kpi">
       ${kpi('Empresas filtradas', fmt(records.length), `${fmt(active)} ativas`, 'var(--azul-claro)')}
       ${kpi('Fornecedores', fmt(records.filter((e) => norm(e.tipo).includes('FORNECEDOR')).length), 'empresas fornecedoras', 'var(--verde)')}
@@ -741,10 +849,10 @@ function empresaFilters(f) {
 }
 function empresaTable(records) {
   if (!records.length) return empty('Nenhuma empresa encontrada', 'Cadastre uma nova empresa ou ajuste os filtros.');
-  return `<div class="tabela-wrap"><table class="tabela"><thead><tr><th>Empresa</th><th>Tipo</th><th>Cidade</th><th>Contato</th><th>Status</th><th class="right">Lotes estoque</th><th class="right">Inspeções</th><th>Observação</th><th>Ações</th></tr></thead><tbody>${records.map((e) => {
+  return `<div class="tabela-wrap"><table class="tabela"><thead><tr><th>Empresa</th><th>Tipo</th><th>Cidade</th><th>Contato</th><th>Status</th><th class="right">Lotes estoque</th><th class="right">Inspeções</th><th>Observação</th>${actionHeader()}</tr></thead><tbody>${records.map((e) => {
     const lotes = state.db.estoque.filter((r) => r.empresaId === e.id).length;
     const insps = state.db.inspecoes.filter((r) => r.empresaId === e.id).length;
-    return `<tr><td><strong>${esc(e.nome)}</strong></td><td>${esc(e.tipo)}</td><td>${esc(e.cidade)}</td><td>${esc(e.contato)}</td><td>${badge(e.status)}</td><td class="right">${fmt(lotes)}</td><td class="right">${fmt(insps)}</td><td>${esc(e.observacao)}</td><td class="acoes-cel"><button class="icone-btn" title="Editar" data-edit="empresa" data-id="${e.id}">✎</button><button class="icone-btn del" title="Excluir" data-delete="empresa" data-id="${e.id}">🗑</button></td></tr>`;
+    return `<tr><td><strong>${esc(e.nome)}</strong></td><td>${esc(e.tipo)}</td><td>${esc(e.cidade)}</td><td>${esc(e.contato)}</td><td>${badge(e.status)}</td><td class="right">${fmt(lotes)}</td><td class="right">${fmt(insps)}</td><td>${esc(e.observacao)}</td>${actionCell('empresa', e.id)}</tr>`;
   }).join('')}</tbody></table></div>`;
 }
 
@@ -759,7 +867,7 @@ function renderEstoque() {
   }).sort((a, b) => (b.data || '').localeCompare(a.data || ''));
   const saldo = records.reduce((s, r) => s + num(r.saldoAtual), 0);
   return `${hero()}
-    <div class="toolbar"><div class="contador">${fmt(records.length)} de ${fmt(state.db.estoque.length)} registro(s) de estoque</div><button class="btn btn-primario" type="button" data-modal="estoque">＋ Novo lançamento de estoque</button></div>
+    <div class="toolbar"><div class="contador">${fmt(records.length)} de ${fmt(state.db.estoque.length)} registro(s) de estoque</div>${canWrite() ? '<button class="btn btn-primario" type="button" data-modal="estoque">＋ Novo lançamento de estoque</button>' : '<span class="badge badge-azul">Perfil consulta: somente leitura</span>'}</div>
     <div class="grid-kpi">
       ${kpi('Registros', fmt(records.length), 'entradas/lotes filtrados', 'var(--azul-claro)')}
       ${kpi('Entrada total', fmt(records.reduce((s, r) => s + num(r.quantidadeEntrada), 0)), 'quantidade recebida', 'var(--verde-claro)')}
@@ -780,9 +888,9 @@ function estoqueFilters(f) {
 }
 function estoqueTable(records) {
   if (!records.length) return empty('Nenhum registro de estoque', 'Cadastre uma entrada ou ajuste os filtros.');
-  return `<div class="tabela-wrap"><table class="tabela"><thead><tr><th>Data</th><th>Empresa</th><th>Subcomponente</th><th>SAP</th><th>Lote</th><th class="right">Entrada</th><th class="right">Saldo</th><th class="right">Amostra</th><th>Status</th><th>Obs.</th><th>Ações</th></tr></thead><tbody>${records.slice(0, 500).map((r) => {
+  return `<div class="tabela-wrap"><table class="tabela"><thead><tr><th>Data</th><th>Empresa</th><th>Subcomponente</th><th>SAP</th><th>Lote</th><th class="right">Entrada</th><th class="right">Saldo</th><th class="right">Amostra</th><th>Status</th><th>Obs.</th>${actionHeader()}</tr></thead><tbody>${records.slice(0, 500).map((r) => {
     const empresa = empresaNomeById(state.db, r.empresaId) || r.empresaNome;
-    return `<tr><td>${dataBR(r.data)}</td><td>${esc(empresa)}</td><td><strong>${esc(r.subcomponente)}</strong></td><td>${esc(r.codSap)}</td><td>${esc(r.lote)}</td><td class="right">${fmt(r.quantidadeEntrada)}</td><td class="right"><strong>${fmt(r.saldoAtual)}</strong></td><td class="right">${fmt(r.amostragem)}</td><td>${badge(r.statusEstoque)}</td><td>${esc(r.obs)}</td><td class="acoes-cel"><button class="icone-btn" title="Editar" data-edit="estoque" data-id="${r.id}">✎</button><button class="icone-btn del" title="Excluir" data-delete="estoque" data-id="${r.id}">🗑</button></td></tr>`;
+    return `<tr><td>${dataBR(r.data)}</td><td>${esc(empresa)}</td><td><strong>${esc(r.subcomponente)}</strong></td><td>${esc(r.codSap)}</td><td>${esc(r.lote)}</td><td class="right">${fmt(r.quantidadeEntrada)}</td><td class="right"><strong>${fmt(r.saldoAtual)}</strong></td><td class="right">${fmt(r.amostragem)}</td><td>${badge(r.statusEstoque)}</td><td>${esc(r.obs)}</td>${actionCell('estoque', r.id)}</tr>`;
   }).join('')}</tbody></table></div>`;
 }
 
@@ -799,7 +907,7 @@ function renderInspecoes() {
   const ins = records.reduce((s, r) => s + num(r.qtdInspecionado), 0);
   const nc = records.reduce((s, r) => s + num(r.qtdNc), 0);
   return `${hero()}
-    <div class="toolbar"><div class="contador">${fmt(records.length)} de ${fmt(state.db.inspecoes.length)} inspeção(ões)</div><button class="btn btn-primario" type="button" data-modal="inspecao">＋ Nova inspeção</button></div>
+    <div class="toolbar"><div class="contador">${fmt(records.length)} de ${fmt(state.db.inspecoes.length)} inspeção(ões)</div>${canWrite() ? '<button class="btn btn-primario" type="button" data-modal="inspecao">＋ Nova inspeção</button>' : '<span class="badge badge-azul">Perfil consulta: somente leitura</span>'}</div>
     <div class="grid-kpi">
       ${kpi('Inspeções', fmt(records.length), 'registros filtrados', 'var(--azul-claro)')}
       ${kpi('Qtd. inspecionada', fmt(ins), `amostra: ${fmt(records.reduce((s, r) => s + num(r.qtdAmostra), 0))}`, 'var(--verde)')}
@@ -821,9 +929,9 @@ function inspecaoFilters(f) {
 }
 function inspecaoTable(records) {
   if (!records.length) return empty('Nenhuma inspeção encontrada', 'Registre uma nova inspeção ou ajuste os filtros.');
-  return `<div class="tabela-wrap"><table class="tabela"><thead><tr><th>Data</th><th>Semana</th><th>Local</th><th>Subcomponente</th><th>SAP</th><th>Empresa</th><th>Lote</th><th class="right">Qtd estoque</th><th class="right">Amostra</th><th class="right">Inspecionado</th><th class="right">NC</th><th>Status</th><th>Ações</th></tr></thead><tbody>${records.slice(0, 500).map((r) => {
+  return `<div class="tabela-wrap"><table class="tabela"><thead><tr><th>Data</th><th>Semana</th><th>Local</th><th>Subcomponente</th><th>SAP</th><th>Empresa</th><th>Lote</th><th class="right">Qtd estoque</th><th class="right">Amostra</th><th class="right">Inspecionado</th><th class="right">NC</th><th>Status</th>${actionHeader()}</tr></thead><tbody>${records.slice(0, 500).map((r) => {
     const empresa = empresaNomeById(state.db, r.empresaId) || r.empresaNome;
-    return `<tr><td>${dataBR(r.diaInspecao)}</td><td>${esc(r.semana)}</td><td>${esc(r.local)}</td><td><strong>${esc(r.subcomponente)}</strong></td><td>${esc(r.codSap)}</td><td>${esc(empresa)}</td><td>${esc(r.lote)}</td><td class="right">${fmt(r.qtdEstoque)}</td><td class="right">${fmt(r.qtdAmostra)}</td><td class="right"><strong>${fmt(r.qtdInspecionado)}</strong></td><td class="right"><strong>${fmt(r.qtdNc)}</strong></td><td>${badge(r.status)}</td><td class="acoes-cel"><button class="icone-btn" title="Editar" data-edit="inspecao" data-id="${r.id}">✎</button><button class="icone-btn del" title="Excluir" data-delete="inspecao" data-id="${r.id}">🗑</button></td></tr>`;
+    return `<tr><td>${dataBR(r.diaInspecao)}</td><td>${esc(r.semana)}</td><td>${esc(r.local)}</td><td><strong>${esc(r.subcomponente)}</strong></td><td>${esc(r.codSap)}</td><td>${esc(empresa)}</td><td>${esc(r.lote)}</td><td class="right">${fmt(r.qtdEstoque)}</td><td class="right">${fmt(r.qtdAmostra)}</td><td class="right"><strong>${fmt(r.qtdInspecionado)}</strong></td><td class="right"><strong>${fmt(r.qtdNc)}</strong></td><td>${badge(r.status)}</td>${actionCell('inspecao', r.id)}</tr>`;
   }).join('')}</tbody></table></div>`;
 }
 
@@ -879,7 +987,7 @@ function renderCards() {
       <div class="campo"><label>Com saldo?</label><select data-filter="cards.hasStock">${optionList(['Sim', 'Não'], f.hasStock, 'Todos')}</select></div>
       <button class="btn btn-secundario" data-clear-filters="cards" type="button">Limpar filtros</button>
     </div>
-    <div class="toolbar"><div class="contador">${fmt(cards.length)} card(s) encontrado(s)</div><button class="btn btn-primario" type="button" data-modal="estoque">＋ Novo lote</button></div>
+    <div class="toolbar"><div class="contador">${fmt(cards.length)} card(s) encontrado(s)</div>${canWrite() ? '<button class="btn btn-primario" type="button" data-modal="estoque">＋ Novo lote</button>' : '<span class="badge badge-azul">Perfil consulta: somente leitura</span>'}</div>
     ${cards.length ? `<div class="subcards">${cards.map(cardHtml).join('')}</div>` : empty('Nenhum card encontrado', 'Ajuste os filtros ou cadastre estoque/inspeções.')}`;
 }
 function cardHtml(c) {
@@ -897,6 +1005,82 @@ function cardHtml(c) {
   </article>`;
 }
 
+function renderAuditoria() {
+  if (!isAdmin()) return `${hero()}${empty('Acesso restrito', 'Somente usuários admin podem visualizar a auditoria.')}`;
+  const f = state.filters.auditoria;
+  const registros = (state.auditoria || []).filter((r) =>
+    (!f.acao || r.acao === f.acao) &&
+    (!f.tabela || r.tabela === f.tabela) &&
+    (!f.usuario || String(r.usuario_email || r.usuario_nome || '').includes(f.usuario)) &&
+    matches(`${r.usuario_nome} ${r.usuario_email} ${r.acao} ${r.tabela} ${r.resumo} ${r.registro_id}`, f.search)
+  );
+  const usuarios = unique(state.auditoria || [], (r) => r.usuario_email || r.usuario_nome).filter(Boolean);
+  const tabelas = unique(state.auditoria || [], (r) => r.tabela).filter(Boolean);
+  const deletes = registros.filter((r) => r.acao === 'DELETE').length;
+  return `${hero()}
+    <div class="toolbar"><div class="contador">${fmt(registros.length)} evento(s) de auditoria</div><button class="btn btn-secundario" type="button" id="refreshAudit">Atualizar auditoria</button></div>
+    <div class="grid-kpi">
+      ${kpi('Eventos', fmt(registros.length), 'registros filtrados', 'var(--azul-claro)')}
+      ${kpi('Adições', fmt(registros.filter((r) => r.acao === 'INSERT').length), 'cadastros realizados', 'var(--verde)')}
+      ${kpi('Edições', fmt(registros.filter((r) => r.acao === 'UPDATE').length), 'alterações salvas', 'var(--amarelo)')}
+      ${kpi('Exclusões', fmt(deletes), 'registros removidos', 'var(--erro)')}
+    </div>
+    <div class="barra-filtros">
+      <div class="campo"><label>Ação</label><select data-filter="auditoria.acao">${optionList(['INSERT', 'UPDATE', 'DELETE'], f.acao, 'Todas')}</select></div>
+      <div class="campo"><label>Tabela</label><select data-filter="auditoria.tabela">${optionList(tabelas, f.tabela, 'Todas')}</select></div>
+      <div class="campo"><label>Usuário</label><select data-filter="auditoria.usuario">${optionList(usuarios, f.usuario, 'Todos')}</select></div>
+      <div class="campo"><label>Busca</label><input type="search" value="${esc(f.search)}" data-filter="auditoria.search" placeholder="Resumo, lote, e-mail, ID..."></div>
+      <button class="btn btn-secundario" data-clear-filters="auditoria" type="button">Limpar filtros</button>
+    </div>
+    ${panel('Histórico de auditoria', 'Mostra quem adicionou, editou ou excluiu registros. Exclusões guardam uma cópia do registro removido no Supabase.', auditoriaTable(registros))}`;
+}
+function auditoriaTable(records) {
+  if (!records.length) return empty('Nenhum evento encontrado', 'Clique em Atualizar auditoria ou ajuste os filtros.');
+  return `<div class="tabela-wrap"><table class="tabela"><thead><tr><th>Data/hora</th><th>Ação</th><th>Tela/Tabela</th><th>Usuário</th><th>Perfil</th><th>Resumo</th><th>ID registro</th></tr></thead><tbody>${records.slice(0, 800).map((r) => `
+    <tr>
+      <td>${dataHoraBR(r.data_hora)}</td>
+      <td>${acaoBadge(r.acao)}</td>
+      <td>${esc(tabelaLabel(r.tabela))}</td>
+      <td><strong>${esc(r.usuario_nome || '—')}</strong><br><small>${esc(r.usuario_email || '')}</small></td>
+      <td>${perfilBadge(r.usuario_perfil)}</td>
+      <td>${esc(r.resumo || '—')}</td>
+      <td><code>${esc(r.registro_id || '')}</code></td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+function renderUsuarios() {
+  if (!isAdmin()) return `${hero()}${empty('Acesso restrito', 'Somente usuários admin podem gerenciar perfis.')}`;
+  const f = state.filters.usuarios;
+  const registros = (state.usuarios || []).filter((u) =>
+    (!f.perfil || u.perfil === f.perfil) &&
+    (!f.ativo || String(u.ativo === true) === f.ativo) &&
+    matches(`${u.nome} ${u.email} ${u.perfil} ${u.id}`, f.search)
+  ).sort((a, b) => String(a.email || '').localeCompare(String(b.email || ''), 'pt-BR'));
+  return `${hero()}
+    <div class="toolbar"><div class="contador">${fmt(registros.length)} usuário(s) do sistema</div><div class="form-acoes" style="margin-top:0"><button class="btn btn-secundario" type="button" id="refreshUsers">Atualizar usuários</button><button class="btn btn-primario" type="button" id="newUserProfile">＋ Perfil de usuário</button></div></div>
+    <div class="aviso-info"><span>🔐</span><div><strong>Perfis:</strong> admin gerencia usuários e auditoria; qualidade cadastra, edita e exclui registros operacionais; consulta apenas visualiza e exporta.</div></div>
+    <div class="barra-filtros">
+      <div class="campo"><label>Perfil</label><select data-filter="usuarios.perfil">${optionList(PERFIS_USUARIO, f.perfil, 'Todos')}</select></div>
+      <div class="campo"><label>Status</label><select data-filter="usuarios.ativo"><option value="">Todos</option><option value="true" ${f.ativo === 'true' ? 'selected' : ''}>Ativo</option><option value="false" ${f.ativo === 'false' ? 'selected' : ''}>Inativo</option></select></div>
+      <div class="campo"><label>Busca</label><input type="search" value="${esc(f.search)}" data-filter="usuarios.search" placeholder="Nome, e-mail, UID..."></div>
+      <button class="btn btn-secundario" data-clear-filters="usuarios" type="button">Limpar filtros</button>
+    </div>
+    ${panel('Usuários autorizados', 'A conta precisa existir em Authentication > Users e também nesta tabela de perfis.', usuariosTable(registros))}`;
+}
+function usuariosTable(records) {
+  if (!records.length) return empty('Nenhum usuário encontrado', 'Cadastre o perfil usando o UID do usuário criado no Authentication.');
+  return `<div class="tabela-wrap"><table class="tabela"><thead><tr><th>Nome</th><th>E-mail</th><th>Perfil</th><th>Status</th><th>UID</th><th>Criado em</th><th>Atualizado em</th><th>Ações</th></tr></thead><tbody>${records.map((u) => `
+    <tr>
+      <td><strong>${esc(u.nome || '—')}</strong></td>
+      <td>${esc(u.email || '')}</td>
+      <td>${perfilBadge(u.perfil)}</td>
+      <td>${u.ativo === true ? badge('Ativo') : badge('Inativo')}</td>
+      <td><code>${esc(u.id || '')}</code></td>
+      <td>${dataHoraBR(u.criado_em)}</td>
+      <td>${dataHoraBR(u.atualizado_em)}</td>
+      <td class="acoes-cel"><button class="icone-btn" title="Editar perfil" data-edit="usuario" data-id="${esc(u.id)}">✎</button></td>
+    </tr>`).join('')}</tbody></table></div>`;
+}
+
 function renderDados() {
   const bytes = new Blob([JSON.stringify(state.db)]).size;
   const storageLabel = DB.usingSupabase() ? 'Supabase' : 'localStorage';
@@ -910,7 +1094,7 @@ function renderDados() {
     </div>
     <div class="grid-graficos">
       ${panel('Backup dos dados', 'Baixe cópias somente para conferência e segurança. A importação/restauração pelo site está desativada.', `<div class="form-acoes" style="justify-content:flex-start;margin-top:0"><button class="btn btn-primario" type="button" id="downloadJson">Baixar backup JSON</button><button class="btn btn-secundario" type="button" id="downloadCsvEstoque">CSV estoque</button><button class="btn btn-secundario" type="button" id="downloadCsvInspecoes">CSV inspeções</button></div>`)}
-      ${panel('Operação protegida', 'Para proteger os dados da empresa, o site não permite importar JSON, restaurar base inicial ou limpar todos os registros em massa. Daqui para frente, os usuários devem cadastrar, editar ou excluir registros individualmente nas telas de Empresas, Estoque e Inspeções.', `<div class="aviso-info"><span>🔒</span><div><strong>Importação e restauração desativadas.</strong><br>Os dados já gravados no Supabase permanecem intactos.</div></div>`)}
+      ${panel('Operação protegida', 'Para proteger os dados da empresa, o site não permite importar JSON, restaurar base inicial ou limpar todos os registros em massa. Daqui para frente, os usuários devem cadastrar, editar ou excluir registros individualmente nas telas de Empresas, Estoque e Inspeções.', `<div class="aviso-info"><span>🔒</span><div><strong>Importação e restauração desativadas.</strong><br>Os dados já gravados no Supabase permanecem intactos.<br><strong>Seu perfil atual:</strong> ${perfilLabel(perfilAtualNome())}.</div></div>`)}
     </div>`;
 }
 
@@ -963,9 +1147,14 @@ function bindPage() {
   $('#downloadJson')?.addEventListener('click', downloadJson);
   $('#downloadCsvEstoque')?.addEventListener('click', () => downloadCsv('estoque'));
   $('#downloadCsvInspecoes')?.addEventListener('click', () => downloadCsv('inspecoes'));
+  $('#refreshAudit')?.addEventListener('click', async () => { await DB.loadAudit(); render(); });
+  $('#refreshUsers')?.addEventListener('click', async () => { await DB.loadUsers(); render(); });
+  $('#newUserProfile')?.addEventListener('click', () => openModal('usuario'));
 }
 
 function openModal(type, id = '') {
+  if (type === 'usuario' && !isAdmin()) { App.toast('Somente admin pode gerenciar usuários.', 'erro'); return; }
+  if (['empresa', 'estoque', 'inspecao'].includes(type) && !canWrite()) { App.toast('Seu perfil é de consulta. Você pode visualizar, mas não cadastrar, editar ou excluir.', 'erro'); return; }
   state.modal = { type, id };
   const overlay = $('#modalOverlay');
   overlay.classList.add('ativo');
@@ -995,7 +1184,8 @@ function modalHtml(type, id) {
   const config = {
     empresa: { title: id ? 'Editar empresa' : 'Nova empresa', body: empresaForm(id) },
     estoque: { title: id ? 'Editar lançamento de estoque' : 'Novo lançamento de estoque', body: estoqueForm(id) },
-    inspecao: { title: id ? 'Editar inspeção' : 'Nova inspeção', body: inspecaoForm(id) }
+    inspecao: { title: id ? 'Editar inspeção' : 'Nova inspeção', body: inspecaoForm(id) },
+    usuario: { title: id ? 'Editar perfil de usuário' : 'Novo perfil de usuário', body: usuarioForm(id) }
   }[type];
   return `<div class="modal" role="dialog" aria-modal="true"><div class="modal-cab"><h2>${esc(config.title)}</h2><button class="fechar-modal" id="closeModal" type="button" aria-label="Fechar">×</button></div><div class="modal-corpo"><form id="modalForm"><div id="modalData">${config.body}</div><div class="form-acoes"><button class="btn btn-secundario" type="button" id="cancelModal">Cancelar</button><button class="btn btn-primario" type="submit">Salvar</button></div></form></div></div>`;
 }
@@ -1060,6 +1250,19 @@ function inspecaoForm(id) {
   </div>`;
 }
 
+function usuarioForm(id) {
+  const r = state.usuarios.find((u) => u.id === id) || { id: '', nome: '', email: '', perfil: 'consulta', ativo: true };
+  const lockedId = id ? 'readonly' : 'required placeholder="Cole o UID do usuário criado em Authentication > Users"';
+  return `<div class="aviso-info"><span>ℹ</span><div><strong>Importante:</strong> primeiro crie o usuário em Authentication &gt; Users no Supabase. Depois copie o UID e cadastre o perfil aqui.</div></div>
+  <div class="form-grid">
+    ${field('UID do usuário Auth *', 'id', r.id, 'text', lockedId)}
+    ${field('Nome', 'nome', r.nome, 'text')}
+    ${field('E-mail *', 'email', r.email, 'email', 'required')}
+    ${selectField('Perfil', 'perfil', PERFIS_USUARIO, r.perfil || 'consulta')}
+    <div class="campo"><label>Status</label><select name="ativo"><option value="true" ${r.ativo !== false ? 'selected' : ''}>Ativo</option><option value="false" ${r.ativo === false ? 'selected' : ''}>Inativo</option></select></div>
+  </div>`;
+}
+
 function formDataObject(form) {
   return Object.fromEntries(new FormData(form).entries());
 }
@@ -1071,10 +1274,18 @@ async function saveModal(ev) {
   const oldText = btn?.textContent || 'Salvar';
   try {
     if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
-    if (type === 'empresa') saveEmpresa(data, id);
-    if (type === 'estoque') saveEstoque(data, id);
-    if (type === 'inspecao') saveInspecao(data, id);
-    await DB.save(id ? 'Registro editado' : 'Novo registro cadastrado');
+    let registroSalvo = null;
+    if (type === 'empresa') registroSalvo = saveEmpresa(data, id);
+    if (type === 'estoque') registroSalvo = saveEstoque(data, id);
+    if (type === 'inspecao') registroSalvo = saveInspecao(data, id);
+    if (type === 'usuario') { await saveUsuarioPerfil(data, id); closeModal(); render(); App.toast(id ? 'Usuário atualizado com sucesso.' : 'Perfil de usuário cadastrado com sucesso.'); return; }
+    if (DB.usingSupabase() && window.StoreSubcomponentesSupabase?.salvarRegistro) {
+      await window.StoreSubcomponentesSupabase.salvarRegistro(type, registroSalvo);
+      state.db.meta = { ...(state.db.meta || {}), updatedAt: new Date().toISOString(), source: 'Supabase', storage: 'supabase', lastAction: id ? 'Registro editado' : 'Novo registro cadastrado' };
+    } else {
+      await DB.save(id ? 'Registro editado' : 'Novo registro cadastrado');
+    }
+    if (isAdmin()) await DB.loadAudit();
     closeModal();
     render();
     App.toast(id ? 'Registro atualizado com sucesso.' : 'Registro cadastrado com sucesso.');
@@ -1084,6 +1295,21 @@ async function saveModal(ev) {
     if (btn) { btn.disabled = false; btn.textContent = oldText; }
   }
 }
+async function saveUsuarioPerfil(data, id) {
+  if (!isAdmin()) throw new Error('Somente admin pode gerenciar usuários.');
+  const perfil = String(data.perfil || 'consulta').toLowerCase();
+  if (!PERFIS_USUARIO.includes(perfil)) throw new Error('Perfil inválido.');
+  const usuario = {
+    id: text(data.id, ''),
+    nome: text(data.nome, ''),
+    email: text(data.email, ''),
+    perfil,
+    ativo: String(data.ativo) !== 'false'
+  };
+  if (!usuario.id || !usuario.email) throw new Error('Informe UID e e-mail do usuário.');
+  await DB.saveUserProfile(usuario);
+}
+
 function saveEmpresa(data, id) {
   const target = state.db.empresas.find((e) => e.id === id) || { id: uid('EMP') };
   Object.assign(target, {
@@ -1096,6 +1322,7 @@ function saveEmpresa(data, id) {
   });
   if (!id) state.db.empresas.push(target);
   syncCompanyNames();
+  return target;
 }
 function saveEstoque(data, id) {
   const empresaId = companyIdFromName(data.empresaNome);
@@ -1115,6 +1342,7 @@ function saveEstoque(data, id) {
     obs: text(data.obs, '')
   });
   if (!id) state.db.estoque.push(target);
+  return target;
 }
 function saveInspecao(data, id) {
   const empresaId = companyIdFromName(data.empresaNome);
@@ -1136,6 +1364,7 @@ function saveInspecao(data, id) {
     observacao: text(data.observacao, '')
   });
   if (!id) state.db.inspecoes.push(target);
+  return target;
 }
 function syncCompanyNames() {
   state.db.estoque.forEach((r) => { r.empresaNome = empresaNomeById(state.db, r.empresaId) || r.empresaNome; });
@@ -1143,6 +1372,7 @@ function syncCompanyNames() {
 }
 
 async function deleteRecord(type, id) {
+  if (!canWrite()) { App.toast('Seu perfil é de consulta. Você não pode excluir registros.', 'erro'); return; }
   const labels = { empresa: 'empresa', estoque: 'registro de estoque', inspecao: 'inspeção' };
   if (!confirm(`Excluir este ${labels[type]}? Esta ação não pode ser desfeita.`)) return;
   try {
@@ -1156,6 +1386,7 @@ async function deleteRecord(type, id) {
     if (type === 'estoque') state.db.estoque = state.db.estoque.filter((r) => r.id !== id);
     if (type === 'inspecao') state.db.inspecoes = state.db.inspecoes.filter((r) => r.id !== id);
     await DB.remove(type, id);
+    if (isAdmin()) await DB.loadAudit();
     render();
     App.toast('Registro excluído.');
   } catch (error) {
@@ -1213,6 +1444,7 @@ function traduzErroBanco(error) {
   if (/row-level security|violates row-level security|permission denied|not authorized/i.test(msg)) return 'Acesso bloqueado pelas regras do Supabase. Confira se o usuário está ativo em usuarios_app e se o perfil permite cadastrar.';
   if (/JWT|session|Auth session missing|Invalid Refresh Token/i.test(msg)) return 'Sua sessão expirou. Saia e entre novamente.';
   if (/Failed to fetch|NetworkError|Load failed|fetch/i.test(msg)) return 'Falha de conexão com o Supabase. Verifique a internet e tente novamente.';
+  if (/auditoria_subcomponentes/i.test(msg)) return 'A tabela de auditoria ainda não existe. Rode o SQL supabase/2026-05-24-auditoria-perfis.sql no Supabase.';
   if (/relation .* does not exist|Could not find the table|schema cache/i.test(msg)) return 'As tabelas de subcomponentes ainda não existem no Supabase. Rode o SQL da pasta supabase primeiro.';
   return `Não foi possível concluir: ${msg}`;
 }
@@ -1224,6 +1456,7 @@ async function bootstrap() {
     if (!autorizado) return;
   }
   await DB.init();
+  await DB.loadAdminData();
   render();
 }
 
