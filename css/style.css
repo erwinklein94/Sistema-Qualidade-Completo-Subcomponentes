@@ -646,3 +646,153 @@ body[data-tema="escuro"] .login-card p,
 body[data-tema="escuro"] .login-nota,
 body[data-tema="escuro"] .usuario-perfil { color: var(--cinza-texto-claro); }
 @media (max-width: 900px) { .usuario-auth { display: none; } }
+
+/* =====================================================================
+   CORREÇÃO DE LEGIBILIDADE — TEMA ESCURO
+   Mantém o visual escuro, mas força textos, títulos, tabelas e cards a
+   usarem cores claras. O topo continua claro para preservar contraste.
+   ===================================================================== */
+body[data-tema="escuro"] {
+  color: #f7f9fc;
+}
+
+body[data-tema="escuro"] .topo {
+  background: #f7f9fc;
+  color: #071f3a;
+  border-bottom-color: rgba(7, 31, 58, 0.12);
+}
+body[data-tema="escuro"] .topo h1,
+body[data-tema="escuro"] .topo .subtitulo {
+  color: #071f3a;
+}
+body[data-tema="escuro"] .topo .subtitulo {
+  opacity: 0.72;
+}
+
+body[data-tema="escuro"] .pagina,
+body[data-tema="escuro"] .card,
+body[data-tema="escuro"] .barra-filtros,
+body[data-tema="escuro"] .kpi,
+body[data-tema="escuro"] .subcard,
+body[data-tema="escuro"] .mini,
+body[data-tema="escuro"] .modal,
+body[data-tema="escuro"] .import-box,
+body[data-tema="escuro"] .aviso-info,
+body[data-tema="escuro"] .tabela-wrap {
+  color: #f7f9fc;
+}
+
+body[data-tema="escuro"] .card,
+body[data-tema="escuro"] .barra-filtros,
+body[data-tema="escuro"] .kpi,
+body[data-tema="escuro"] .subcard,
+body[data-tema="escuro"] .modal,
+body[data-tema="escuro"] .import-box,
+body[data-tema="escuro"] .tabela-wrap {
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+body[data-tema="escuro"] .card-titulo,
+body[data-tema="escuro"] .card-sub,
+body[data-tema="escuro"] .contador,
+body[data-tema="escuro"] .kpi .valor,
+body[data-tema="escuro"] .kpi .sub,
+body[data-tema="escuro"] .campo label,
+body[data-tema="escuro"] .tabela td,
+body[data-tema="escuro"] .tabela td strong,
+body[data-tema="escuro"] .chart-label,
+body[data-tema="escuro"] .chart-value,
+body[data-tema="escuro"] .legend-item,
+body[data-tema="escuro"] .subcard h3,
+body[data-tema="escuro"] .subcard .meta,
+body[data-tema="escuro"] .mini .rot,
+body[data-tema="escuro"] .mini .num,
+body[data-tema="escuro"] .vazio h3,
+body[data-tema="escuro"] .vazio p,
+body[data-tema="escuro"] .modal-cab h2,
+body[data-tema="escuro"] .aviso-info strong {
+  color: #f7f9fc;
+}
+
+body[data-tema="escuro"] .kpi .rotulo,
+body[data-tema="escuro"] .vazio,
+body[data-tema="escuro"] .line-bar small,
+body[data-tema="escuro"] .usuario-perfil,
+body[data-tema="escuro"] .login-card p,
+body[data-tema="escuro"] .login-nota {
+  color: #bfd2e8;
+}
+
+body[data-tema="escuro"] .tabela th {
+  background: #03162b;
+  color: #d9e8f7;
+  border-bottom-color: rgba(255, 255, 255, 0.16);
+}
+body[data-tema="escuro"] .tabela th,
+body[data-tema="escuro"] .tabela td {
+  border-bottom-color: rgba(255, 255, 255, 0.12);
+}
+body[data-tema="escuro"] .tabela tbody tr:hover td {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+body[data-tema="escuro"] .campo input,
+body[data-tema="escuro"] .campo select,
+body[data-tema="escuro"] .campo textarea,
+body[data-tema="escuro"] .file-input {
+  background: #f7f9fc;
+  color: #071f3a;
+  border-color: rgba(255, 255, 255, 0.22);
+}
+body[data-tema="escuro"] .campo input::placeholder,
+body[data-tema="escuro"] .campo textarea::placeholder {
+  color: #66788a;
+}
+
+body[data-tema="escuro"] .btn-secundario,
+body[data-tema="escuro"] .icone-btn,
+body[data-tema="escuro"] .fechar-modal {
+  background: #f7f9fc;
+  color: #071f3a;
+  border-color: rgba(255, 255, 255, 0.22);
+}
+body[data-tema="escuro"] .btn-secundario:hover,
+body[data-tema="escuro"] .icone-btn:hover {
+  color: #003567;
+  border-color: #8DC63F;
+}
+
+body[data-tema="escuro"] .nav a.ativo {
+  background: #f7f9fc;
+  color: #071f3a;
+}
+body[data-tema="escuro"] .nav a.ativo:hover {
+  background: #ffffff;
+  color: #071f3a;
+}
+
+body[data-tema="escuro"] .badge-roxo {
+  background: rgba(106, 92, 255, 0.22);
+  color: #c9c5ff;
+}
+
+body[data-tema="escuro"] .aviso-info {
+  background: rgba(0, 168, 233, 0.08);
+}
+body[data-tema="escuro"] .aviso-info.sucesso {
+  background: rgba(141, 198, 63, 0.08);
+}
+body[data-tema="escuro"] .aviso-info.erro {
+  background: rgba(255, 107, 107, 0.08);
+}
+body[data-tema="escuro"] .aviso-info.aviso {
+  background: rgba(255, 212, 1, 0.08);
+}
+
+body[data-tema="escuro"] .hero,
+body[data-tema="escuro"] .hero h2,
+body[data-tema="escuro"] .hero p,
+body[data-tema="escuro"] .hero-chip,
+body[data-tema="escuro"] .toast {
+  color: #ffffff;
+}
