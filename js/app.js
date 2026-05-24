@@ -337,6 +337,18 @@ const App = {
 };
 
 
+function prepararTabelasMobile() {
+  document.querySelectorAll('.tabela').forEach((table) => {
+    const headers = Array.from(table.querySelectorAll('thead th')).map((th) => th.textContent.trim() || 'Info');
+    table.querySelectorAll('tbody tr').forEach((tr) => {
+      Array.from(tr.children).forEach((td, i) => {
+        if (!td.getAttribute('data-label')) td.setAttribute('data-label', headers[i] || 'Info');
+      });
+    });
+  });
+}
+
+
 const DB = {
   mode: 'local',
   usingSupabase() {
@@ -819,6 +831,7 @@ function render() {
   try {
     $('#page').innerHTML = (views[state.active] || renderDashboard)();
     bindPage();
+    prepararTabelasMobile();
   } catch (error) {
     console.error('Erro ao renderizar a tela:', error);
     $('#page').innerHTML = `${hero()}${panel('Não foi possível abrir esta tela', 'O sistema encontrou um erro inesperado ao montar os dados.', `<div class="aviso-info erro"><span>!</span><div><strong>Detalhe técnico:</strong> ${esc(error?.message || error)}<br>Atualize a página. Se continuar, exporte um backup em JSON e revise os dados importados.</div></div>`)}`;
