@@ -764,9 +764,7 @@ function renderDashboard() {
   const estoquePorComp = groupSum(rows, (r) => r.component, (r) => r.saldoEstoque).slice(0, 10);
   const ncPorComp = groupSum(rows, (r) => r.component, (r) => r.qtdNc).filter((d) => d.value > 0).slice(0, 10);
   const inspPorEmpresa = groupSum(state.db.inspecoes, (r) => empresaNomeById(state.db, r.empresaId) || r.empresaNome, (r) => r.qtdInspecionado).slice(0, 10);
-  const semana = groupSum(state.db.inspecoes, (r) => r.semana || isoWeek(r.diaInspecao), (r) => r.qtdInspecionado)
-    .sort((a, b) => weekSortValue(a.name) - weekSortValue(b.name))
-    .slice(-14);
+  const semana = weeklyTrendData(inspecoesFromComparisonRows(rows)).slice(-14);
 
   return `${hero()}
     <div class="barra-filtros">${dashboardFilters(allRows)}</div>
@@ -783,7 +781,7 @@ function renderDashboard() {
       ${panel('Status dos lotes', 'Comparativo estoque × inspeção', donut(status))}
       ${panel('Inspecionado por empresa', 'Top fornecedores/fábricas', barList(inspPorEmpresa, 'un.'))}
       ${panel('Materiais com NC', 'Subcomponentes com não conformidade', ncPorComp.length ? barList(ncPorComp, 'NC') : empty('Nenhuma NC nos filtros', 'Ajuste os filtros ou registre uma nova inspeção.'))}
-      ${panel('Evolução por semana', 'Quantidade inspecionada nos últimos períodos', lineChart(semana), 'span2')}
+      ${panel('Evolução semanal das inspeções', 'Últimas 14 semanas dos lotes filtrados: volume, NC e registros', weeklyTrendChart(semana), 'span2 painel-evolucao')}
       ${panel('Tabela comparativa por lote', `${fmt(rows.length)} linhas encontradas`, comparisonTable(rows), 'span2')}
     </div>`;
 }
@@ -1118,6 +1116,84 @@ function donut(data) {
     return `${colors[i % colors.length]} ${start}deg ${deg}deg`;
   }).join(', ');
   return `<div class="donut-wrap"><div class="donut" style="background:conic-gradient(${stops})"></div><div class="legend">${data.map((d, i) => `<div class="legend-item"><span class="legend-left"><span class="legend-dot" style="background:${colors[i % colors.length]}"></span><span>${esc(d.name)}</span></span><strong>${fmt(d.value)}</strong></div>`).join('')}</div></div>`;
+}
+
+function inspecoesFromComparisonRows(rows) {
+  if (!rows.length) return [];
+  const keys = new Set(rows.map((r) => r.key));
+  return state.db.inspecoes.filter((r) => keys.has(comparisonKey(r.subcomponente, r.lote)));
+}
+
+function weeklyTrendData(inspecoes) {
+  const map = new Map();
+  inspecoes.forEach((r) => {
+    const name = text(r.semana, '') || isoWeek(r.diaInspecao);
+    if (!name) return;
+    const item = map.get(name) || { name, value: 0, nc: 0, registros: 0, amostra: 0 };
+    item.value += num(r.qtdInspecionado);
+    item.nc += num(r.qtdNc);
+    item.amostra += num(r.qtdAmostra);
+    item.registros += 1;
+    map.set(name, item);
+  });
+  return Array.from(map.values()).sort((a, b) => weekSortValue(a.name) - weekSortValue(b.name));
+}
+
+function diffLabel(atual, anterior) {
+  const dif = num(atual) - num(anterior);
+  if (!num(anterior) && !num(atual)) return 'sem variação';
+  if (!num(anterior)) return `+${fmt(dif)} vs. semana anterior`;
+  const perc = dif / num(anterior) * 100;
+  const sinal = dif > 0 ? '+' : '';
+  return `${sinal}${fmt(dif)} (${sinal}${pct(perc)}) vs. semana anterior`;
+}
+
+function compactWeekName(name) {
+  return String(name || '').replace(/^20(\d{2})-S/i, '$1-S');
+}
+
+function weeklyTrendChart(data) {
+  if (!data.length) return empty('Sem inspeções nos filtros atuais', 'Ajuste os filtros ou registre uma inspeção para gerar a evolução semanal.');
+
+  const max = Math.max(...data.map((d) => num(d.value)), 1);
+  const totalInspecionado = data.reduce((s, d) => s + num(d.value), 0);
+  const totalNc = data.reduce((s, d) => s + num(d.nc), 0);
+  const totalRegistros = data.reduce((s, d) => s + num(d.registros), 0);
+  const atual = data[data.length - 1] || { value: 0, nc: 0, registros: 0, name: '' };
+  const anterior = data[data.length - 2] || { value: 0 };
+  const maior = data.reduce((best, d) => num(d.value) > num(best.value) ? d : best, data[0]);
+  const taxaNc = totalInspecionado ? totalNc / totalInspecionado * 100 : 0;
+  const variacao = num(atual.value) - num(anterior.value);
+
+  return `<div class="weekly-trend">
+    <div class="weekly-summary">
+      <div class="weekly-stat"><span>Total inspecionado</span><strong>${fmt(totalInspecionado)}</strong><small>${fmt(totalRegistros)} registro(s)</small></div>
+      <div class="weekly-stat"><span>Semana atual</span><strong>${fmt(atual.value)}</strong><small>${esc(compactWeekName(atual.name))}</small></div>
+      <div class="weekly-stat ${variacao >= 0 ? 'positivo' : 'negativo'}"><span>Tendência</span><strong>${variacao >= 0 ? '↗' : '↘'} ${esc(diffLabel(atual.value, anterior.value))}</strong><small>comparação com a semana anterior</small></div>
+      <div class="weekly-stat ${totalNc > 0 ? 'alerta' : 'positivo'}"><span>Não conformidades</span><strong>${fmt(totalNc)}</strong><small>taxa ${pct(taxaNc)}</small></div>
+    </div>
+    <div class="weekly-bars" aria-label="Evolução semanal das inspeções">
+      ${data.map((d) => {
+        const altura = Math.max(8, Math.round(num(d.value) / max * 100));
+        const ncRate = num(d.value) ? num(d.nc) / num(d.value) * 100 : 0;
+        const destaque = d.name === maior.name ? ' destaque' : '';
+        return `<div class="weekly-col${destaque}" title="${esc(d.name)}: ${fmt(d.value)} inspecionado(s), ${fmt(d.nc)} NC, ${fmt(d.registros)} registro(s)">
+          <div class="weekly-value"><strong>${fmt(d.value)}</strong>${num(d.nc) ? `<span>${fmt(d.nc)} NC</span>` : ''}</div>
+          <div class="weekly-barbox">
+            <div class="weekly-bar" style="height:${altura}%"></div>
+            ${num(d.nc) ? `<div class="weekly-nc" style="height:${Math.max(5, Math.round(ncRate))}%"></div>` : ''}
+          </div>
+          <div class="weekly-week">${esc(compactWeekName(d.name))}</div>
+          <div class="weekly-registros">${fmt(d.registros)} reg.</div>
+        </div>`;
+      }).join('')}
+    </div>
+    <div class="weekly-legend">
+      <span><i class="leg-inspecionado"></i> Quantidade inspecionada</span>
+      <span><i class="leg-nc"></i> NC dentro da semana</span>
+      <span><i class="leg-destaque"></i> Maior volume do período</span>
+    </div>
+  </div>`;
 }
 function lineChart(data) {
   if (!data.length) return empty('Sem dados semanais');
