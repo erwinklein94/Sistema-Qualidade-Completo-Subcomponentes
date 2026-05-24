@@ -765,20 +765,7 @@ function topActions() {
 }
 
 function hero() {
-  const updated = state.db.meta?.updatedAt ? new Date(state.db.meta.updatedAt).toLocaleString('pt-BR') : '—';
-  const source = state.db.meta?.source || 'Dados locais';
-  const stats = state.db.meta?.stats || {};
-  const period = Array.isArray(stats.periodoInspecoes) ? `${dataBR(stats.periodoInspecoes[0])} a ${dataBR(stats.periodoInspecoes[1])}` : '';
-  return `<div class="hero">
-    <h2>Controle de qualidade de subcomponentes</h2>
-    <p>Cadastre empresas, registre entradas de estoque, acompanhe inspeções e visualize a situação por lote/subcomponente sem depender de importação de Excel.</p>
-    <div class="hero-meta">
-      <span class="hero-chip">Base: ${esc(source)}</span>
-      <span class="hero-chip">Atualizado: ${esc(updated)}</span>
-      ${period ? `<span class="hero-chip">Inspeções: ${esc(period)}</span>` : ''}
-      <span class="hero-chip">GitHub Pages + ${DB.usingSupabase() ? 'Supabase' : 'localStorage'}</span>
-    </div>
-  </div>`;
+  return '';
 }
 
 function kpi(title, value, sub, color = 'var(--azul-claro)') {
