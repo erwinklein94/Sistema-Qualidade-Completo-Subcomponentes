@@ -168,6 +168,7 @@ const App = {
     $('#quickStock')?.addEventListener('click', () => openModal('estoque'));
     $('#quickInspection')?.addEventListener('click', () => openModal('inspecao'));
     $('#quickCompany')?.addEventListener('click', () => openModal('empresa'));
+    window.Auth?.montarStatusUsuario?.();
   },
   toggleMenu() {
     const open = $('#sidebar').classList.toggle('aberta');
@@ -204,35 +205,88 @@ const App = {
   }
 };
 
+
 const DB = {
+  mode: 'local',
+  usingSupabase() {
+    return this.mode === 'supabase' && !!window.StoreSubcomponentesSupabase;
+  },
   async init() {
+    if (window.Auth?.configurado?.() && window.StoreSubcomponentesSupabase) {
+      try {
+        state.db = await window.StoreSubcomponentesSupabase.carregarDb();
+        state.db.meta = {
+          ...(state.db.meta || {}),
+          version: 2,
+          source: 'Supabase',
+          storage: 'supabase',
+          updatedAt: new Date().toISOString()
+        };
+        this.mode = 'supabase';
+        return;
+      } catch (error) {
+        console.error('Falha ao carregar dados do Supabase:', error);
+        App.toast('Não consegui carregar o Supabase. Use a tela Dados para revisar a configuração.', 'erro');
+      }
+    }
+
+    this.mode = 'local';
     const saved = localStorage.getItem(STORAGE_KEY);
     if (saved) {
       try {
         state.db = normalizeDb(JSON.parse(saved));
+        state.db.meta = { ...(state.db.meta || {}), source: 'localStorage', storage: 'localStorage' };
         return;
       } catch (error) {
         console.warn('Dados salvos inválidos. Tentando base inicial.', error);
       }
     }
     state.db = await loadSeed();
-    this.save('Base inicial carregada');
+    await this.save('Base inicial carregada');
   },
-  save(action = 'Dados alterados no sistema') {
+  async save(action = 'Dados alterados no sistema') {
     const currentMeta = state.db.meta || {};
     state.db.meta = {
       ...currentMeta,
       version: currentMeta.version || 2,
       updatedAt: new Date().toISOString(),
-      source: currentMeta.source || action,
+      source: this.usingSupabase() ? 'Supabase' : (currentMeta.source || 'localStorage'),
+      storage: this.usingSupabase() ? 'supabase' : 'localStorage',
       lastAction: action
     };
+
+    if (this.usingSupabase()) {
+      await window.StoreSubcomponentesSupabase.salvarDb(state.db);
+      return;
+    }
+
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.db));
   },
-  replace(nextDb, source = 'Dados restaurados') {
+  async replace(nextDb, source = 'Dados restaurados') {
     state.db = normalizeDb(nextDb);
-    this.save(source);
+    state.db.meta = { ...(state.db.meta || {}), source, storage: this.usingSupabase() ? 'supabase' : 'localStorage' };
+    if (this.usingSupabase()) {
+      await window.StoreSubcomponentesSupabase.limparDb();
+    }
+    await this.save(source);
     render();
+  },
+  async remove(type, id) {
+    if (this.usingSupabase()) {
+      await window.StoreSubcomponentesSupabase.remover(type, id);
+      return;
+    }
+    await this.save('Registro excluído');
+  },
+  async clearAll() {
+    state.db = emptyDb();
+    state.db.meta.source = this.usingSupabase() ? 'Supabase' : 'localStorage';
+    state.db.meta.storage = this.usingSupabase() ? 'supabase' : 'localStorage';
+    if (this.usingSupabase()) {
+      await window.StoreSubcomponentesSupabase.limparDb();
+      return;
+    }
+    localStorage.removeItem(STORAGE_KEY);
   }
 };
 
@@ -550,6 +604,7 @@ function topActions() {
     <button class="btn btn-primario btn-sm" id="quickInspection" type="button">＋ Inspeção</button>
     <button class="btn btn-secundario btn-sm" id="quickCompany" type="button">＋ Empresa</button>
     <button class="btn btn-secundario btn-sm" id="themeBtn" type="button">◐<span>Tema escuro</span></button>
+    ${window.Auth ? '<span class="usuario-auth" id="areaUsuario"></span>' : ''}
   `;
 }
 
@@ -565,7 +620,7 @@ function hero() {
       <span class="hero-chip">Base: ${esc(source)}</span>
       <span class="hero-chip">Atualizado: ${esc(updated)}</span>
       ${period ? `<span class="hero-chip">Inspeções: ${esc(period)}</span>` : ''}
-      <span class="hero-chip">GitHub Pages + localStorage</span>
+      <span class="hero-chip">GitHub Pages + ${DB.usingSupabase() ? 'Supabase' : 'localStorage'}</span>
     </div>
   </div>`;
 }
@@ -857,18 +912,19 @@ function cardHtml(c) {
 
 function renderDados() {
   const bytes = new Blob([JSON.stringify(state.db)]).size;
+  const storageLabel = DB.usingSupabase() ? 'Supabase' : 'localStorage';
   return `${hero()}
-    <div class="aviso-info"><span>ℹ</span><div><strong>Importante:</strong> este sistema é 100% compatível com GitHub Pages. Os dados ficam salvos no navegador de quem usa. A base inicial foi montada a partir da planilha de subcomponentes; para uso multiusuário com sincronização entre pessoas, será necessário conectar um backend depois, como Supabase ou API própria.</div></div>
+    <div class="aviso-info"><span>ℹ</span><div><strong>Base de dados:</strong> ${DB.usingSupabase() ? 'os cadastros estão sendo lidos e gravados no Supabase para todos os usuários autorizados.' : 'modo local ativo; os dados ficam apenas neste navegador até configurar o Supabase.'}</div></div>
     <div class="grid-kpi">
       ${kpi('Empresas', fmt(state.db.empresas.length), 'cadastros salvos', 'var(--azul-claro)')}
       ${kpi('Estoque', fmt(state.db.estoque.length), 'lotes/entradas', 'var(--verde)')}
       ${kpi('Inspeções', fmt(state.db.inspecoes.length), 'registros executados', 'var(--verde-claro)')}
-      ${kpi('Tamanho da base', `${(bytes / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} KB`, 'localStorage', 'var(--amarelo)')}
+      ${kpi('Tamanho da base', `${(bytes / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} KB`, storageLabel, 'var(--amarelo)')}
     </div>
     <div class="grid-graficos">
       ${panel('Backup dos dados', 'Baixe um JSON para guardar ou versionar no repositório', `<div class="form-acoes" style="justify-content:flex-start;margin-top:0"><button class="btn btn-primario" type="button" id="downloadJson">Baixar backup JSON</button><button class="btn btn-secundario" type="button" id="downloadCsvEstoque">CSV estoque</button><button class="btn btn-secundario" type="button" id="downloadCsvInspecoes">CSV inspeções</button></div>`)}
       ${panel('Restaurar backup', 'Aceita apenas JSON exportado por este sistema', `<div class="import-box"><input class="file-input" type="file" id="restoreFile" accept="application/json,.json"><button class="btn btn-verde" type="button" id="restoreBtn">Restaurar JSON selecionado</button></div>`)}
-      ${panel('Manutenção', 'Ações administrativas locais', `<div class="form-acoes" style="justify-content:flex-start;margin-top:0"><button class="btn btn-secundario" type="button" id="reloadSeed">Recarregar base inicial</button><button class="btn btn-perigo" type="button" id="clearAll">Limpar todos os dados</button></div>`, 'span2')}
+      ${panel('Manutenção', DB.usingSupabase() ? 'Ações administrativas no Supabase' : 'Ações administrativas locais', `<div class="form-acoes" style="justify-content:flex-start;margin-top:0"><button class="btn btn-secundario" type="button" id="reloadSeed">Recarregar base inicial</button><button class="btn btn-perigo" type="button" id="clearAll">Limpar todos os dados</button></div>`, 'span2')}
     </div>`;
 }
 
@@ -1024,17 +1080,26 @@ function inspecaoForm(id) {
 function formDataObject(form) {
   return Object.fromEntries(new FormData(form).entries());
 }
-function saveModal(ev) {
+async function saveModal(ev) {
   ev.preventDefault();
   const { type, id } = state.modal || {};
   const data = formDataObject(ev.currentTarget);
-  if (type === 'empresa') saveEmpresa(data, id);
-  if (type === 'estoque') saveEstoque(data, id);
-  if (type === 'inspecao') saveInspecao(data, id);
-  DB.save(id ? 'Registro editado' : 'Novo registro cadastrado');
-  closeModal();
-  render();
-  App.toast(id ? 'Registro atualizado com sucesso.' : 'Registro cadastrado com sucesso.');
+  const btn = ev.currentTarget.querySelector('button[type="submit"]');
+  const oldText = btn?.textContent || 'Salvar';
+  try {
+    if (btn) { btn.disabled = true; btn.textContent = 'Salvando...'; }
+    if (type === 'empresa') saveEmpresa(data, id);
+    if (type === 'estoque') saveEstoque(data, id);
+    if (type === 'inspecao') saveInspecao(data, id);
+    await DB.save(id ? 'Registro editado' : 'Novo registro cadastrado');
+    closeModal();
+    render();
+    App.toast(id ? 'Registro atualizado com sucesso.' : 'Registro cadastrado com sucesso.');
+  } catch (error) {
+    console.error('Erro ao salvar registro:', error);
+    App.toast(traduzErroBanco(error), 'erro');
+    if (btn) { btn.disabled = false; btn.textContent = oldText; }
+  }
 }
 function saveEmpresa(data, id) {
   const target = state.db.empresas.find((e) => e.id === id) || { id: uid('EMP') };
@@ -1094,19 +1159,26 @@ function syncCompanyNames() {
   state.db.inspecoes.forEach((r) => { r.empresaNome = empresaNomeById(state.db, r.empresaId) || r.empresaNome; });
 }
 
-function deleteRecord(type, id) {
+async function deleteRecord(type, id) {
   const labels = { empresa: 'empresa', estoque: 'registro de estoque', inspecao: 'inspeção' };
   if (!confirm(`Excluir este ${labels[type]}? Esta ação não pode ser desfeita.`)) return;
-  if (type === 'empresa') {
-    const used = state.db.estoque.some((r) => r.empresaId === id) || state.db.inspecoes.some((r) => r.empresaId === id);
-    if (used && !confirm('Esta empresa está vinculada a estoque/inspeções. Excluir mesmo assim? Os registros manterão apenas o nome salvo.')) return;
-    state.db.empresas = state.db.empresas.filter((e) => e.id !== id);
+  try {
+    if (type === 'empresa') {
+      const used = state.db.estoque.some((r) => r.empresaId === id) || state.db.inspecoes.some((r) => r.empresaId === id);
+      if (used && !confirm('Esta empresa está vinculada a estoque/inspeções. Excluir mesmo assim? Os registros manterão apenas o nome salvo.')) return;
+      state.db.empresas = state.db.empresas.filter((e) => e.id !== id);
+      state.db.estoque.forEach((r) => { if (r.empresaId === id) r.empresaId = ''; });
+      state.db.inspecoes.forEach((r) => { if (r.empresaId === id) r.empresaId = ''; });
+    }
+    if (type === 'estoque') state.db.estoque = state.db.estoque.filter((r) => r.id !== id);
+    if (type === 'inspecao') state.db.inspecoes = state.db.inspecoes.filter((r) => r.id !== id);
+    await DB.remove(type, id);
+    render();
+    App.toast('Registro excluído.');
+  } catch (error) {
+    console.error('Erro ao excluir registro:', error);
+    App.toast(traduzErroBanco(error), 'erro');
   }
-  if (type === 'estoque') state.db.estoque = state.db.estoque.filter((r) => r.id !== id);
-  if (type === 'inspecao') state.db.inspecoes = state.db.inspecoes.filter((r) => r.id !== id);
-  DB.save('Registro excluído');
-  render();
-  App.toast('Registro excluído.');
 }
 
 function download(filename, content, mime = 'application/octet-stream') {
@@ -1150,7 +1222,7 @@ async function restoreJson() {
     const content = await file.text();
     const parsed = JSON.parse(content);
     if (!confirm('Restaurar este backup e substituir os dados atuais?')) return;
-    DB.replace(parsed, `Backup restaurado: ${file.name}`);
+    await DB.replace(parsed, `Backup restaurado: ${file.name}`);
     App.toast('Backup restaurado com sucesso.');
   } catch (error) {
     App.toast('Não consegui restaurar o JSON. Confira o arquivo.', 'erro');
@@ -1159,17 +1231,41 @@ async function restoreJson() {
 async function reloadSeed() {
   if (!confirm('Recarregar a base inicial e substituir os dados atuais?')) return;
   state.db = await loadSeed();
-  DB.save('Base inicial recarregada');
+  if (DB.usingSupabase()) await window.StoreSubcomponentesSupabase.limparDb();
+  await DB.save('Base inicial recarregada');
   render();
   App.toast('Base inicial recarregada.');
 }
-function clearAll() {
-  if (!confirm('Limpar todos os dados salvos neste navegador?')) return;
-  state.db = emptyDb();
-  DB.save('Base limpa pelo usuário');
-  render();
-  App.toast('Dados limpos.');
+async function clearAll() {
+  const alvo = DB.usingSupabase() ? 'no Supabase' : 'neste navegador';
+  if (!confirm(`Limpar todos os dados salvos ${alvo}?`)) return;
+  try {
+    await DB.clearAll();
+    render();
+    App.toast('Dados limpos.');
+  } catch (error) {
+    console.error('Erro ao limpar dados:', error);
+    App.toast(traduzErroBanco(error), 'erro');
+  }
 }
 
-App.init();
-DB.init().then(render);
+function traduzErroBanco(error) {
+  const msg = String(error?.message || error || 'Erro desconhecido.');
+  if (/row-level security|violates row-level security|permission denied|not authorized/i.test(msg)) return 'Acesso bloqueado pelas regras do Supabase. Confira se o usuário está ativo em usuarios_app e se o perfil permite cadastrar.';
+  if (/JWT|session|Auth session missing|Invalid Refresh Token/i.test(msg)) return 'Sua sessão expirou. Saia e entre novamente.';
+  if (/Failed to fetch|NetworkError|Load failed|fetch/i.test(msg)) return 'Falha de conexão com o Supabase. Verifique a internet e tente novamente.';
+  if (/relation .* does not exist|Could not find the table|schema cache/i.test(msg)) return 'As tabelas de subcomponentes ainda não existem no Supabase. Rode o SQL da pasta supabase primeiro.';
+  return `Não foi possível concluir: ${msg}`;
+}
+
+async function bootstrap() {
+  App.init();
+  if (window.Auth?.exigirLogin) {
+    const autorizado = await window.Auth.exigirLogin();
+    if (!autorizado) return;
+  }
+  await DB.init();
+  render();
+}
+
+bootstrap();

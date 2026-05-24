@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login · Controle de Subcomponentes Rumo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <main class="login-page">
+    <section class="login-card">
+      <div class="login-marca">rum<span class="o-circ"></span></div>
+      <h1>Controle de Subcomponentes</h1>
+      <p>Entre com seu usuário autorizado para acessar os dados do sistema.</p>
+
+      <form id="formLogin" class="login-form">
+        <div class="campo">
+          <label for="email">E-mail</label>
+          <input type="email" id="email" autocomplete="email" required placeholder="seu.email@empresa.com">
+        </div>
+        <div class="campo">
+          <label for="senha">Senha</label>
+          <input type="password" id="senha" autocomplete="current-password" required placeholder="Sua senha">
+        </div>
+        <button class="btn btn-primario" id="btnEntrar" type="submit">Entrar</button>
+      </form>
+
+      <div id="loginMensagem" class="login-msg"></div>
+
+      <div class="login-nota">
+        A criação de usuários fica no Supabase. Depois de criar o usuário em <strong>Authentication &gt; Users</strong>, cadastre o UID dele em <strong>usuarios_app</strong>.
+      </div>
+    </section>
+  </main>
+
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>if(!window.supabase){document.write('<script src="https://unpkg.com/@supabase/supabase-js@2"><\/script>');}</script>
+  <script src="js/supabase-config.js?v=20260524-subcomponentes"></script>
+  <script src="js/auth.js?v=20260524-subcomponentes"></script>
+  <script src="js/login.js?v=20260524-subcomponentes"></script>
+</body>
+</html>

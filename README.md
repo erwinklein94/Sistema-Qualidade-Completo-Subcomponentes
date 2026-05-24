@@ -1,72 +1,165 @@
-# Sistema de Qualidade — Subcomponentes
+# Sistema de Qualidade — Subcomponentes com Supabase
 
-Site estático compatível com GitHub Pages para controlar subcomponentes, empresas, estoque e inspeções sem depender de importação de Excel.
+Esta versão foi adaptada para funcionar como o modelo do **Sistema de Qualidade de Dormentes**, usando Supabase como banco central e GitHub Pages como hospedagem estática.
 
-## Estrutura
+## O que mudou nesta versão
+
+- Inclusão de login com Supabase Auth.
+- Leitura e gravação no Supabase em vez de somente `localStorage`.
+- Tabelas próprias para subcomponentes:
+  - `empresas_subcomponentes`
+  - `estoque_subcomponentes`
+  - `inspecoes_subcomponentes`
+- Controle de perfis pela tabela `usuarios_app`.
+- Backup JSON e exportações CSV continuam funcionando.
+- Se o Supabase não carregar, o sistema informa o erro em vez de ficar preso em “Carregando”.
+
+## Arquivos importantes
 
 ```txt
 index.html
+login.html
 css/style.css
+js/supabase-config.js
+js/auth.js
+js/store-supabase.js
 js/app.js
 assets/data/default-data.json
-.nojekyll
+supabase/2026-05-24-subcomponentes.sql
 ```
 
+## Configuração do Supabase
 
-## Base inicial incorporada
+### 1. Rodar o SQL
 
-A base inicial está no arquivo `assets/data/default-data.json` e foi gerada a partir da planilha `Estoque Cavan Subcomponentes(2).xlsx`.
+No Supabase, abra **SQL Editor** e rode o arquivo:
 
-Resumo da carga:
+```txt
+supabase/2026-05-24-subcomponentes.sql
+```
 
-- 254 registros de estoque.
-- 133 registros de inspeções executadas.
-- 7 empresas/fábricas/fornecedores cadastrados automaticamente.
-- 18 subcomponentes consolidados após limpeza leve de nomes.
-- Período do estoque: 04/02/2025 a 29/04/2026.
-- Período das inspeções: 23/10/2025 a 06/05/2026.
+Esse arquivo cria as tabelas, políticas RLS e funções necessárias.
 
-Tratamentos aplicados:
+### 2. Criar o primeiro usuário
 
-- Datas de Excel foram convertidas para formato ISO (`YYYY-MM-DD`).
-- Nomes com pequenas variações foram padronizados, como `Ombreira Fast-Clip HFOB08` para `Ombreira FAST-CLIP HFOB08`.
-- Registros com `não existe mais em estoque` foram marcados como **Fora do estoque**.
-- Registros com observação `Sem inspeção` foram marcados como **Pendente**.
-- Códigos SAP foram preenchidos no estoque quando havia correspondência por subcomponente na aba de inspeções.
+No Supabase:
 
-## Como publicar no GitHub Pages
+1. Vá em **Authentication > Users**.
+2. Clique em **Add user**.
+3. Informe e-mail e senha.
+4. Depois de criar, copie o **UID** do usuário.
+5. Volte ao **SQL Editor** e rode um cadastro como este, trocando os dados:
 
-1. Envie todos os arquivos desta pasta para um repositório no GitHub.
+```sql
+insert into public.usuarios_app (id, nome, email, perfil, ativo)
+values ('UUID_DO_USUARIO_AUTH', 'Nome do Usuário', 'email@empresa.com', 'admin', true)
+on conflict (id) do update
+set nome = excluded.nome,
+    email = excluded.email,
+    perfil = excluded.perfil,
+    ativo = excluded.ativo,
+    atualizado_em = now();
+```
+
+Perfis disponíveis:
+
+- `admin`: lê, cadastra, edita e exclui.
+- `qualidade`: lê, cadastra, edita e exclui registros operacionais.
+- `consulta`: apenas lê.
+
+### 3. Conferir `js/supabase-config.js`
+
+O arquivo já está no mesmo padrão do sistema de dormentes. Se for usar outro projeto Supabase, troque:
+
+```js
+url: 'SUA_PROJECT_URL',
+publishableKey: 'SUA_PUBLISHABLE_KEY'
+```
+
+Use somente a **Publishable key**. Nunca coloque `service_role`, senha do banco ou connection string no navegador.
+
+## Como carregar a base inicial no Supabase
+
+Depois de entrar no site com usuário `admin` ou `qualidade`:
+
+1. Abra **Dados e backup**.
+2. Clique em **Recarregar base inicial**.
+3. Confirme a ação.
+
+Com o Supabase ativo, esse botão limpa as tabelas de subcomponentes e envia a base inicial do arquivo `assets/data/default-data.json` para o banco.
+
+## Como cadastrar corretamente
+
+### 1. Cadastre ou confira a empresa
+
+Abra **Empresas > Nova empresa**.
+
+Preencha:
+
+- **Nome da empresa**: use sempre o mesmo nome, sem variações.
+- **Tipo**: Fornecedor, Fábrica ou Fornecedor e fábrica.
+- **Status**: use `Ativa` para empresas em uso.
+
+Evite cadastrar a mesma empresa com nomes diferentes, por exemplo `Cavan`, `CAVAN` e `Cavan Ltda.`. Escolha um padrão e mantenha.
+
+### 2. Cadastre o estoque
+
+Abra **Estoque > Novo lançamento de estoque**.
+
+Campos principais:
+
+- **Data de entrada**: data em que o material entrou no estoque.
+- **Empresa/Fábrica**: selecione/digite exatamente o nome cadastrado em Empresas.
+- **Subcomponente**: use um padrão fixo de nome. Exemplo: `Ombreira FAST-CLIP HFOB08`.
+- **Código SAP**: informe quando existir.
+- **Lote**: este é o campo mais importante para cruzar com inspeções.
+- **Quantidade de entrada**: quantidade recebida.
+- **Saldo atual**: quantidade que ainda está disponível.
+- **Amostragem**: quantidade prevista para amostra, quando aplicável.
+- **Status do estoque**: normalmente `Pendente`, `Em análise`, `Inspecionado` ou `Fora do estoque`.
+
+Boa prática: para o mesmo lote e subcomponente, mantenha o lote escrito sempre igual. Exemplo: se usou `BAG-001`, não cadastre depois como `BAG 001`.
+
+### 3. Cadastre a inspeção
+
+Abra **Inspeções realizadas > Nova inspeção**.
+
+Campos principais:
+
+- **Dia da inspeção**: a semana é preenchida automaticamente.
+- **Subcomponente/Material**: escreva igual ao cadastro de estoque.
+- **Fornecedor/Empresa**: use a mesma empresa vinculada ao lote.
+- **Lote/BAG**: escreva igual ao lote cadastrado no estoque.
+- **QTD Estoque**: quantidade do lote no momento da inspeção.
+- **QTD Amostra**: quantidade definida para amostra.
+- **QTD Inspecionado**: quantidade efetivamente inspecionada.
+- **QTD NC**: quantidade não conforme. Use `0` quando não houver NC.
+- **Status**: escolha `Aprovado`, `Aprovado com ressalva`, `Reprovado`, `Pendente` ou `Em análise`.
+
+A tela de Dashboard cruza estoque e inspeção principalmente por **Subcomponente + Lote**. Se esses dois campos forem escritos de formas diferentes, o sistema entende como registros separados.
+
+## Publicar no GitHub Pages
+
+1. Envie todos os arquivos desta pasta para o repositório.
 2. Vá em **Settings > Pages**.
-3. Em **Build and deployment**, selecione **Deploy from a branch**.
+3. Escolha **Deploy from a branch**.
 4. Selecione a branch `main` e a pasta `/root`.
-5. Abra a URL gerada pelo GitHub Pages.
+5. Acesse a URL publicada.
 
-## Como os dados são salvos
+## Teste rápido depois da publicação
 
-O sistema usa `localStorage`, então os dados ficam no navegador do usuário. A chave atual é `qualidadeSubcomponentes.v2`, para carregar a nova base inicial sem misturar com versões antigas. Isso mantém o site 100% estático e compatível com GitHub Pages.
+1. Abra o site publicado.
+2. Faça login.
+3. Cadastre uma empresa teste.
+4. Cadastre um estoque com lote teste.
+5. Cadastre uma inspeção com o mesmo subcomponente e lote.
+6. Confira se o Dashboard atualiza.
+7. No Supabase, abra **Table Editor** e veja se os registros apareceram nas tabelas.
 
-Para segurança operacional, use a tela **Dados e backup** para baixar backups JSON regularmente. O JSON pode ser restaurado pelo próprio sistema.
+## Solução de problemas
 
-## Funcionalidades incluídas
-
-- Dashboard geral com KPIs e gráficos em HTML/CSS/JS puro.
-- Cadastro, edição e exclusão de empresas.
-- Cadastro, edição e exclusão de entradas/lotes de estoque.
-- Cadastro, edição e exclusão de inspeções realizadas.
-- Cards consolidados por subcomponente.
-- Filtros por empresa, status, subcomponente, semana, lote e busca livre.
-- Exportação de backup JSON.
-- Exportação CSV de estoque e inspeções.
-- Tema claro/escuro.
-
-## Observação importante
-
-Para uso multiusuário com sincronização entre computadores, será necessário evoluir para uma camada de backend, por exemplo Supabase. A versão atual foi feita para cumprir o requisito de funcionar diretamente no GitHub Pages.
-
-## Correção desta versão
-
-- Corrigido o carregamento das abas **Dashboard geral** e **Cards por subcomponente** com a base real da planilha.
-- Ajustado o tratamento de listas únicas usadas nos filtros de empresa.
-- Adicionado tratamento de erro na renderização para evitar tela presa em “Carregando”.
-- Adicionado versionamento no `index.html` para forçar o navegador/GitHub Pages a buscar o JavaScript atualizado.
+- **Login feito, mas sem acesso**: o usuário existe em Auth, mas não foi cadastrado em `usuarios_app` ou está `ativo = false`.
+- **Erro de RLS/permissão**: o perfil provavelmente é `consulta`; use `admin` ou `qualidade` para cadastrar.
+- **Tabelas não encontradas**: rode o SQL `supabase/2026-05-24-subcomponentes.sql`.
+- **Dados não aparecem para outro usuário**: confirme que ambos estão no mesmo projeto Supabase e que `js/supabase-config.js` foi publicado atualizado.
+- **Dashboard separa lote que deveria ser igual**: padronize o campo lote e o nome do subcomponente em estoque e inspeção.

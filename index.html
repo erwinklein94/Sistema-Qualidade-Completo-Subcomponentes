@@ -49,6 +49,11 @@
   <div class="toast-wrap" id="toastWrap" aria-live="polite" aria-atomic="true"></div>
   <div class="modal-overlay" id="modalOverlay" aria-hidden="true"></div>
 
-  <script src="js/app.js?v=20260524-02" defer></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script>if(!window.supabase){document.write('<script src="https://unpkg.com/@supabase/supabase-js@2"><\/script>');}</script>
+  <script src="js/supabase-config.js?v=20260524-subcomponentes"></script>
+  <script src="js/auth.js?v=20260524-subcomponentes"></script>
+  <script src="js/store-supabase.js?v=20260524-subcomponentes"></script>
+  <script src="js/app.js?v=20260524-subcomponentes" defer></script>
 </body>
 </html>
