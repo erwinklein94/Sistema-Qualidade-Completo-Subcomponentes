@@ -20,7 +20,7 @@ const NAV = [
 ];
 
 const PAGE_COPY = {
-  dashboard: ['Dashboard geral', 'Visão consolidada de saldo, inspeções, NC e pendências por subcomponente.'],
+  dashboard: ['Dashboard', 'Visão geral da qualidade de subcomponentes, estoque, inspeções e pendências.'],
   cards: ['Cards por subcomponente', 'Resumo visual por material com saldo, lotes, inspeções e não conformidades.'],
   empresas: ['Empresas', 'Cadastro de fábricas e fornecedores vinculados aos subcomponentes.'],
   materiais: ['Materiais', 'Cadastro técnico dos subcomponentes, normas, planos de amostragem e ETM.'],
@@ -271,11 +271,11 @@ const App = {
     $('#pageTitle').textContent = title;
     $('#pageSubtitle').textContent = subtitle;
     $('#topActions').innerHTML = topActions();
+    $('#hubBtn')?.addEventListener('click', () => { window.location.href = 'https://erwinklein94.github.io/Projeto-Hub-Qualidade/'; });
     $('#themeBtn')?.addEventListener('click', () => this.toggleTheme());
-    $('#quickStock')?.addEventListener('click', () => openModal('estoque'));
-    $('#quickInspection')?.addEventListener('click', () => openModal('inspecao'));
-    $('#quickCompany')?.addEventListener('click', () => openModal('empresa'));
-    $('#quickMaterial')?.addEventListener('click', () => openModal('material'));
+    $('#refreshBtn')?.addEventListener('click', () => this.refreshData());
+    $('#exportExcelBtn')?.addEventListener('click', exportDashboardExcel);
+    $('#exportPdfBtn')?.addEventListener('click', exportDashboardPdf);
     window.Auth?.montarStatusUsuario?.();
   },
   toggleMenu() {
@@ -298,6 +298,29 @@ const App = {
     if (persist) localStorage.setItem(THEME_KEY, escuro ? 'escuro' : 'claro');
     const btn = $('#themeBtn');
     if (btn) btn.innerHTML = `${escuro ? '☀' : '◐'}<span>${escuro ? 'Tema claro' : 'Tema escuro'}</span>`;
+  },
+  async refreshData() {
+    const btn = $('#refreshBtn');
+    const original = btn?.innerHTML;
+    if (btn) {
+      btn.disabled = true;
+      btn.innerHTML = '⟳<span>Atualizando...</span>';
+    }
+    try {
+      await DB.init();
+      if (state.active === 'auditoria') await DB.loadAudit();
+      if (state.active === 'usuarios') await DB.loadUsers();
+      render();
+      App.toast('Dados atualizados com sucesso.');
+    } catch (error) {
+      console.error('Erro ao atualizar dados:', error);
+      App.toast('Não foi possível atualizar os dados agora.', 'erro');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.innerHTML = original || '✓<span>Atualizar</span>';
+      }
+    }
   },
   toast(message, type = 'sucesso') {
     const el = document.createElement('div');
@@ -752,15 +775,16 @@ function badge(status) {
 }
 
 function topActions() {
-  const actions = canWrite() ? `
-    <button class="btn btn-verde btn-sm" id="quickStock" type="button">＋ Estoque</button>
-    <button class="btn btn-primario btn-sm" id="quickInspection" type="button">＋ Inspeção</button>
-    <button class="btn btn-secundario btn-sm" id="quickCompany" type="button">＋ Empresa</button>
-    <button class="btn btn-secundario btn-sm" id="quickMaterial" type="button">＋ Material</button>` : '';
+  const exportButtons = state.active === 'dashboard' ? `
+    <span class="topo-divisor" aria-hidden="true"></span>
+    <button class="btn btn-secundario btn-sm topo-action" id="exportExcelBtn" type="button" title="Exportar dashboard filtrado para Excel">Excel</button>
+    <button class="btn btn-secundario btn-sm topo-action" id="exportPdfBtn" type="button" title="Exportar dashboard filtrado para PDF">PDF</button>` : '';
   return `
-    ${actions}
-    <button class="btn btn-secundario btn-sm" id="themeBtn" type="button">◐<span>Tema escuro</span></button>
+    <button class="btn btn-secundario btn-sm topo-action" id="hubBtn" type="button" title="Voltar para o Hub de Qualidade">HUB</button>
+    <button class="btn btn-verde btn-sm topo-action" id="themeBtn" type="button">◐<span>Tema escuro</span></button>
     ${window.Auth ? '<span class="usuario-auth" id="areaUsuario"></span>' : ''}
+    <button class="btn btn-secundario btn-sm topo-action" id="refreshBtn" type="button" title="Recarregar dados do Supabase">✓<span>Atualizar</span></button>
+    ${exportButtons}
   `;
 }
 
@@ -1677,6 +1701,89 @@ function downloadCsv(type) {
     ]);
     download(`inspecoes-subcomponentes-${todayIso()}.csv`, csv, 'text/csv;charset=utf-8');
   }
+}
+
+function dashboardExportRows() {
+  return filteredComparisonRows();
+}
+function dashboardExportSummary(rows) {
+  const inspecoesFiltradas = inspecoesFromComparisonRows(rows);
+  const totalSaldo = rows.reduce((s, r) => s + num(r.saldoEstoque), 0);
+  const totalInspecionado = rows.reduce((s, r) => s + num(r.qtdInspecionado), 0);
+  const totalNc = rows.reduce((s, r) => s + num(r.qtdNc), 0);
+  const pendentes = rows.filter((r) => r.status === 'Pendente de inspeção').length;
+  return [
+    { indicador: 'Período', valor: dashboardPeriodoLabel() },
+    { indicador: 'Subcomponentes', valor: fmt(unique(rows, (r) => r.component).length) },
+    { indicador: 'Lotes filtrados', valor: fmt(unique(rows, (r) => r.key).length) },
+    { indicador: 'Saldo em estoque', valor: fmt(totalSaldo) },
+    { indicador: 'Qtd. inspecionada', valor: fmt(totalInspecionado) },
+    { indicador: 'Registros de inspeção', valor: fmt(inspecoesFiltradas.length) },
+    { indicador: 'Não conformidades', valor: fmt(totalNc) },
+    { indicador: 'Taxa NC', valor: pct(totalInspecionado ? totalNc / totalInspecionado * 100 : 0) },
+    { indicador: 'Pendentes', valor: fmt(pendentes) }
+  ];
+}
+function dashboardExportHeaders() {
+  return [
+    { label: 'Subcomponente', get: (r) => r.component },
+    { label: 'Lote', get: (r) => r.lote },
+    { label: 'SAP', get: (r) => (r.codSap || []).join(', ') },
+    { label: 'Empresas', get: (r) => (r.empresas || []).join(', ') },
+    { label: 'Saldo estoque', get: (r) => r.saldoEstoque },
+    { label: 'Qtd. inspecionada', get: (r) => r.qtdInspecionado },
+    { label: 'Qtd. NC', get: (r) => r.qtdNc },
+    { label: 'Status', get: (r) => r.status },
+    { label: 'Registros estoque', get: (r) => r.registrosEstoque },
+    { label: 'Registros inspeção', get: (r) => r.registrosInspecao },
+    { label: 'Última inspeção', get: (r) => r.lastDate },
+    { label: 'Diferença estoque x inspeção', get: (r) => r.diffEstoqueInspecao }
+  ];
+}
+function exportDashboardExcel() {
+  const rows = dashboardExportRows();
+  const summary = dashboardExportSummary(rows);
+  const summaryHtml = summary.map((r) => `<tr><td>${esc(r.indicador)}</td><td>${esc(r.valor)}</td></tr>`).join('');
+  const headers = dashboardExportHeaders();
+  const tableHead = headers.map((h) => `<th>${esc(h.label)}</th>`).join('');
+  const tableRows = rows.map((r) => `<tr>${headers.map((h) => `<td>${esc(h.get(r))}</td>`).join('')}</tr>`).join('');
+  const html = `
+    <html><head><meta charset="utf-8"></head><body>
+      <h2>Dashboard de Subcomponentes</h2>
+      <p>Exportado em ${esc(dataHoraBR(new Date().toISOString()))}</p>
+      <table border="1"><tbody>${summaryHtml}</tbody></table>
+      <br>
+      <table border="1"><thead><tr>${tableHead}</tr></thead><tbody>${tableRows}</tbody></table>
+    </body></html>`;
+  download(`dashboard-subcomponentes-${todayIso()}.xls`, html, 'application/vnd.ms-excel;charset=utf-8');
+  App.toast('Dashboard filtrado exportado para Excel.');
+}
+function exportDashboardPdf() {
+  const rows = dashboardExportRows();
+  const summary = dashboardExportSummary(rows);
+  const headers = dashboardExportHeaders();
+  const summaryHtml = summary.map((r) => `<div class="pdf-kpi"><strong>${esc(r.indicador)}</strong><span>${esc(r.valor)}</span></div>`).join('');
+  const tableHead = headers.map((h) => `<th>${esc(h.label)}</th>`).join('');
+  const tableRows = rows.slice(0, 600).map((r) => `<tr>${headers.map((h) => `<td>${esc(h.get(r))}</td>`).join('')}</tr>`).join('');
+  const avisoLimite = rows.length > 600 ? `<p class="aviso">Exibindo 600 de ${fmt(rows.length)} linhas para manter o PDF legível. Use Excel para exportação completa.</p>` : '';
+  const html = `<!doctype html>
+  <html lang="pt-BR"><head><meta charset="utf-8"><title>Dashboard Subcomponentes</title>
+  <style>
+    body{font-family:Arial,sans-serif;color:#0b2f55;margin:24px;font-size:12px}h1{font-size:22px;margin:0 0 4px}p{margin:4px 0 16px;color:#516173}.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:16px 0}.pdf-kpi{border:1px solid #d8e0ea;border-radius:8px;padding:9px}.pdf-kpi strong{display:block;font-size:10px;text-transform:uppercase;color:#516173}.pdf-kpi span{display:block;font-size:16px;font-weight:700;color:#003567;margin-top:3px}table{width:100%;border-collapse:collapse;margin-top:14px}th,td{border:1px solid #d8e0ea;padding:6px;text-align:left;vertical-align:top}th{background:#003567;color:white}.aviso{padding:8px;background:#fff7d6;border:1px solid #f1d776;color:#5c4a00}@media print{body{margin:12mm}.no-print{display:none}}
+  </style></head><body>
+    <button class="no-print" onclick="window.print()" style="margin-bottom:16px;padding:8px 12px">Imprimir / salvar PDF</button>
+    <h1>Dashboard de Subcomponentes</h1>
+    <p>${esc(dashboardPeriodoLabel())} · Exportado em ${esc(dataHoraBR(new Date().toISOString()))}</p>
+    <div class="kpis">${summaryHtml}</div>
+    ${avisoLimite}
+    <table><thead><tr>${tableHead}</tr></thead><tbody>${tableRows}</tbody></table>
+    <script>setTimeout(function(){window.print()}, 350);</script>
+  </body></html>`;
+  const win = window.open('', '_blank');
+  if (!win) { App.toast('O navegador bloqueou a janela do PDF. Permita pop-ups para este site.', 'erro'); return; }
+  win.document.open();
+  win.document.write(html);
+  win.document.close();
 }
 async function restoreJson() {
   App.toast('Restauração de backup desativada para proteger os dados da empresa.', 'erro');
