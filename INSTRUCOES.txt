@@ -1,0 +1,24 @@
+Atualização: remover importação/restauração/limpeza em massa do site de Subcomponentes
+
+Objetivo:
+- Não altera nada no Supabase.
+- Remove da tela do site as opções de restaurar JSON, recarregar base inicial e limpar todos os dados.
+- Mantém backup/exportação JSON e CSV.
+- Mantém cadastro, edição e exclusão manual individual pelo site.
+
+Arquivos que devem substituir os atuais no GitHub:
+1) js/app.js
+2) js/store-supabase.js
+
+Como aplicar no GitHub:
+1. Abra o repositório Sistema-Qualidade-Completo-Subcomponentes.
+2. Entre na pasta js.
+3. Substitua o arquivo app.js por este app.js.
+4. Substitua o arquivo store-supabase.js por este store-supabase.js.
+5. Faça Commit changes.
+6. Aguarde o GitHub Pages atualizar.
+7. Abra o site com Ctrl+F5 para limpar cache.
+
+Importante:
+- Não substitua o arquivo js/supabase-config.js se ele já está com a URL e a Publishable Key corretas do seu projeto Supabase.
+- Esta atualização não apaga e não altera dados existentes no Supabase.

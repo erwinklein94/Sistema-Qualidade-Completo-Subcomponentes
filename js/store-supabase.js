@@ -183,15 +183,10 @@ const StoreSubcomponentesSupabase = (() => {
   }
 
   async function limparDb() {
-    // Ordem importante: estoque/inspeções primeiro por causa das referências de empresa.
-    for (const table of [TABLES.inspecoes, TABLES.estoque, TABLES.empresas]) {
-      const { error } = await db().from(table).delete().neq('id', '__nunca__');
-      if (error) throw error;
-    }
-    return true;
+    throw new Error('Limpeza total desativada neste sistema. Exclua registros individualmente pelo site.');
   }
 
-  return { carregarDb, salvarDb, remover, limparDb };
+  return { carregarDb, salvarDb, remover };
 })();
 
 window.StoreSubcomponentesSupabase = StoreSubcomponentesSupabase;

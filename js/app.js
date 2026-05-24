@@ -22,7 +22,7 @@ const PAGE_COPY = {
   empresas: ['Empresas', 'Cadastro de fábricas e fornecedores vinculados aos subcomponentes.'],
   estoque: ['Estoque de subcomponentes', 'Lançamento e controle dos lotes em estoque, sem importação de planilha.'],
   inspecoes: ['Inspeções realizadas', 'Registro de inspeções por lote/BAG, fornecedor e status de aprovação.'],
-  dados: ['Dados e backup', 'Exportação, restauração e limpeza dos dados salvos neste navegador.']
+  dados: ['Dados e backup', 'Exportação de segurança dos dados salvos no Supabase.']
 };
 
 const STATUS_ESTOQUE = ['Pendente', 'Em análise', 'Inspecionado', 'Fora do estoque'];
@@ -262,14 +262,8 @@ const DB = {
 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.db));
   },
-  async replace(nextDb, source = 'Dados restaurados') {
-    state.db = normalizeDb(nextDb);
-    state.db.meta = { ...(state.db.meta || {}), source, storage: this.usingSupabase() ? 'supabase' : 'localStorage' };
-    if (this.usingSupabase()) {
-      await window.StoreSubcomponentesSupabase.limparDb();
-    }
-    await this.save(source);
-    render();
+  async replace() {
+    throw new Error('Restauração de backup desativada neste sistema. Cadastre, edite ou exclua registros manualmente.');
   },
   async remove(type, id) {
     if (this.usingSupabase()) {
@@ -279,14 +273,7 @@ const DB = {
     await this.save('Registro excluído');
   },
   async clearAll() {
-    state.db = emptyDb();
-    state.db.meta.source = this.usingSupabase() ? 'Supabase' : 'localStorage';
-    state.db.meta.storage = this.usingSupabase() ? 'supabase' : 'localStorage';
-    if (this.usingSupabase()) {
-      await window.StoreSubcomponentesSupabase.limparDb();
-      return;
-    }
-    localStorage.removeItem(STORAGE_KEY);
+    throw new Error('Limpeza total desativada neste sistema. Exclua registros individualmente pelas telas do site.');
   }
 };
 
@@ -922,9 +909,8 @@ function renderDados() {
       ${kpi('Tamanho da base', `${(bytes / 1024).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} KB`, storageLabel, 'var(--amarelo)')}
     </div>
     <div class="grid-graficos">
-      ${panel('Backup dos dados', 'Baixe um JSON para guardar ou versionar no repositório', `<div class="form-acoes" style="justify-content:flex-start;margin-top:0"><button class="btn btn-primario" type="button" id="downloadJson">Baixar backup JSON</button><button class="btn btn-secundario" type="button" id="downloadCsvEstoque">CSV estoque</button><button class="btn btn-secundario" type="button" id="downloadCsvInspecoes">CSV inspeções</button></div>`)}
-      ${panel('Restaurar backup', 'Aceita apenas JSON exportado por este sistema', `<div class="import-box"><input class="file-input" type="file" id="restoreFile" accept="application/json,.json"><button class="btn btn-verde" type="button" id="restoreBtn">Restaurar JSON selecionado</button></div>`)}
-      ${panel('Manutenção', DB.usingSupabase() ? 'Ações administrativas no Supabase' : 'Ações administrativas locais', `<div class="form-acoes" style="justify-content:flex-start;margin-top:0"><button class="btn btn-secundario" type="button" id="reloadSeed">Recarregar base inicial</button><button class="btn btn-perigo" type="button" id="clearAll">Limpar todos os dados</button></div>`, 'span2')}
+      ${panel('Backup dos dados', 'Baixe cópias somente para conferência e segurança. A importação/restauração pelo site está desativada.', `<div class="form-acoes" style="justify-content:flex-start;margin-top:0"><button class="btn btn-primario" type="button" id="downloadJson">Baixar backup JSON</button><button class="btn btn-secundario" type="button" id="downloadCsvEstoque">CSV estoque</button><button class="btn btn-secundario" type="button" id="downloadCsvInspecoes">CSV inspeções</button></div>`)}
+      ${panel('Operação protegida', 'Para proteger os dados da empresa, o site não permite importar JSON, restaurar base inicial ou limpar todos os registros em massa. Daqui para frente, os usuários devem cadastrar, editar ou excluir registros individualmente nas telas de Empresas, Estoque e Inspeções.', `<div class="aviso-info"><span>🔒</span><div><strong>Importação e restauração desativadas.</strong><br>Os dados já gravados no Supabase permanecem intactos.</div></div>`)}
     </div>`;
 }
 
@@ -977,9 +963,6 @@ function bindPage() {
   $('#downloadJson')?.addEventListener('click', downloadJson);
   $('#downloadCsvEstoque')?.addEventListener('click', () => downloadCsv('estoque'));
   $('#downloadCsvInspecoes')?.addEventListener('click', () => downloadCsv('inspecoes'));
-  $('#restoreBtn')?.addEventListener('click', restoreJson);
-  $('#reloadSeed')?.addEventListener('click', reloadSeed);
-  $('#clearAll')?.addEventListener('click', clearAll);
 }
 
 function openModal(type, id = '') {
@@ -1216,37 +1199,13 @@ function downloadCsv(type) {
   }
 }
 async function restoreJson() {
-  const file = $('#restoreFile')?.files?.[0];
-  if (!file) return App.toast('Selecione um arquivo JSON para restaurar.', 'erro');
-  try {
-    const content = await file.text();
-    const parsed = JSON.parse(content);
-    if (!confirm('Restaurar este backup e substituir os dados atuais?')) return;
-    await DB.replace(parsed, `Backup restaurado: ${file.name}`);
-    App.toast('Backup restaurado com sucesso.');
-  } catch (error) {
-    App.toast('Não consegui restaurar o JSON. Confira o arquivo.', 'erro');
-  }
+  App.toast('Restauração de backup desativada para proteger os dados da empresa.', 'erro');
 }
 async function reloadSeed() {
-  if (!confirm('Recarregar a base inicial e substituir os dados atuais?')) return;
-  state.db = await loadSeed();
-  if (DB.usingSupabase()) await window.StoreSubcomponentesSupabase.limparDb();
-  await DB.save('Base inicial recarregada');
-  render();
-  App.toast('Base inicial recarregada.');
+  App.toast('Recarregamento da base inicial desativado para não substituir dados do Supabase.', 'erro');
 }
 async function clearAll() {
-  const alvo = DB.usingSupabase() ? 'no Supabase' : 'neste navegador';
-  if (!confirm(`Limpar todos os dados salvos ${alvo}?`)) return;
-  try {
-    await DB.clearAll();
-    render();
-    App.toast('Dados limpos.');
-  } catch (error) {
-    console.error('Erro ao limpar dados:', error);
-    App.toast(traduzErroBanco(error), 'erro');
-  }
+  App.toast('Limpeza total desativada. Exclua registros individualmente pelas telas do sistema.', 'erro');
 }
 
 function traduzErroBanco(error) {
