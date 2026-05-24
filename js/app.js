@@ -1,6 +1,6 @@
 'use strict';
 
-const STORAGE_KEY = 'qualidadeSubcomponentes.v1';
+const STORAGE_KEY = 'qualidadeSubcomponentes.v2';
 const THEME_KEY = 'temaControleDormentesSubcomponentes';
 const DEFAULT_DATA_URL = 'assets/data/default-data.json';
 
@@ -108,8 +108,11 @@ function weekSortValue(label) {
 function optionList(options, selected, all = 'Todos') {
   return `<option value="">${esc(all)}</option>${options.map((o) => `<option value="${esc(o)}" ${o === selected ? 'selected' : ''}>${esc(o)}</option>`).join('')}`;
 }
-function unique(records, getter) {
-  return [...new Set(records.map(getter).filter(Boolean).map((v) => String(v).trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+function unique(records, getter = (value) => value) {
+  return [...new Set((records || []).flatMap((record) => {
+    const value = getter(record);
+    return Array.isArray(value) ? value : [value];
+  }).filter(Boolean).map((v) => String(v).trim()).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 }
 function groupSum(records, keyGetter, valueGetter) {
   const m = new Map();
@@ -215,12 +218,14 @@ const DB = {
     state.db = await loadSeed();
     this.save('Base inicial carregada');
   },
-  save(source = 'Dados alterados no sistema') {
+  save(action = 'Dados alterados no sistema') {
+    const currentMeta = state.db.meta || {};
     state.db.meta = {
-      ...(state.db.meta || {}),
-      version: 1,
+      ...currentMeta,
+      version: currentMeta.version || 2,
       updatedAt: new Date().toISOString(),
-      source
+      source: currentMeta.source || action,
+      lastAction: action
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state.db));
   },
@@ -235,8 +240,9 @@ async function loadSeed() {
   try {
     const res = await fetch(DEFAULT_DATA_URL, { cache: 'no-store' });
     if (!res.ok) throw new Error('Base inicial não encontrada.');
-    const legacy = await res.json();
-    return normalizeDb(legacyToDb(legacy));
+    const seed = await res.json();
+    const looksLikeDb = Array.isArray(seed.empresas) || Array.isArray(seed.inspecoes) || seed?.meta?.version >= 2;
+    return normalizeDb(looksLikeDb ? seed : legacyToDb(seed));
   } catch (error) {
     console.warn(error);
     return emptyDb();
@@ -510,6 +516,7 @@ function buildComparisonRows() {
       saldoEstoque,
       qtdEstoqueInspecao,
       qtdAmostra: inspection?.qtdAmostra || 0,
+      amostragem: stock?.amostragem || 0,
       qtdInspecionado,
       qtdNc,
       ncRate: qtdInspecionado ? qtdNc / qtdInspecionado * 100 : 0,
@@ -549,12 +556,15 @@ function topActions() {
 function hero() {
   const updated = state.db.meta?.updatedAt ? new Date(state.db.meta.updatedAt).toLocaleString('pt-BR') : '—';
   const source = state.db.meta?.source || 'Dados locais';
+  const stats = state.db.meta?.stats || {};
+  const period = Array.isArray(stats.periodoInspecoes) ? `${dataBR(stats.periodoInspecoes[0])} a ${dataBR(stats.periodoInspecoes[1])}` : '';
   return `<div class="hero">
     <h2>Controle de qualidade de subcomponentes</h2>
     <p>Cadastre empresas, registre entradas de estoque, acompanhe inspeções e visualize a situação por lote/subcomponente sem depender de importação de Excel.</p>
     <div class="hero-meta">
       <span class="hero-chip">Base: ${esc(source)}</span>
       <span class="hero-chip">Atualizado: ${esc(updated)}</span>
+      ${period ? `<span class="hero-chip">Inspeções: ${esc(period)}</span>` : ''}
       <span class="hero-chip">GitHub Pages + localStorage</span>
     </div>
   </div>`;
@@ -581,8 +591,13 @@ function render() {
     cards: renderCards,
     dados: renderDados
   };
-  $('#page').innerHTML = (views[state.active] || renderDashboard)();
-  bindPage();
+  try {
+    $('#page').innerHTML = (views[state.active] || renderDashboard)();
+    bindPage();
+  } catch (error) {
+    console.error('Erro ao renderizar a tela:', error);
+    $('#page').innerHTML = `${hero()}${panel('Não foi possível abrir esta tela', 'O sistema encontrou um erro inesperado ao montar os dados.', `<div class="aviso-info erro"><span>!</span><div><strong>Detalhe técnico:</strong> ${esc(error?.message || error)}<br>Atualize a página. Se continuar, exporte um backup em JSON e revise os dados importados.</div></div>`)}`;
+  }
   App.applyTheme(document.body.getAttribute('data-tema') || 'claro', false);
 }
 
@@ -843,7 +858,7 @@ function cardHtml(c) {
 function renderDados() {
   const bytes = new Blob([JSON.stringify(state.db)]).size;
   return `${hero()}
-    <div class="aviso-info"><span>ℹ</span><div><strong>Importante:</strong> este sistema é 100% compatível com GitHub Pages. Os dados ficam salvos no navegador de quem usa. Para uso multiusuário com sincronização entre pessoas, será necessário conectar um backend depois, como Supabase ou API própria.</div></div>
+    <div class="aviso-info"><span>ℹ</span><div><strong>Importante:</strong> este sistema é 100% compatível com GitHub Pages. Os dados ficam salvos no navegador de quem usa. A base inicial foi montada a partir da planilha de subcomponentes; para uso multiusuário com sincronização entre pessoas, será necessário conectar um backend depois, como Supabase ou API própria.</div></div>
     <div class="grid-kpi">
       ${kpi('Empresas', fmt(state.db.empresas.length), 'cadastros salvos', 'var(--azul-claro)')}
       ${kpi('Estoque', fmt(state.db.estoque.length), 'lotes/entradas', 'var(--verde)')}
