@@ -1974,3 +1974,123 @@ body[data-tema="escuro"] .badge-cinza { background: rgba(255,255,255,.12); color
   .login-card { padding: 32px 24px; border-radius: 24px; }
   .login-marca img { width: 148px; }
 }
+
+/* Ajuste fino Dashboard Rumo - indicadores principais
+   Evita corte em números grandes e dá destaque ao saldo em estoque. */
+.dashboard-kpis {
+  grid-template-columns:
+    minmax(155px, .95fr)
+    minmax(270px, 1.45fr)
+    minmax(165px, 1fr)
+    minmax(155px, .95fr)
+    minmax(155px, .95fr)
+    minmax(135px, .85fr);
+  gap: 18px;
+  align-items: stretch;
+}
+.dashboard-kpis .kpi {
+  min-width: 0;
+  min-height: 146px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  padding: 24px 22px 20px;
+}
+.dashboard-kpis .kpi .rotulo,
+.dashboard-kpis .kpi .sub,
+.dashboard-kpis .kpi .valor {
+  position: relative;
+  z-index: 1;
+}
+.dashboard-kpis .kpi .rotulo {
+  line-height: 1.22;
+}
+.dashboard-kpis .kpi .valor {
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: visible;
+  text-overflow: clip;
+  letter-spacing: -0.9px;
+  font-size: clamp(28px, 2.45vw, 36px);
+}
+.dashboard-kpis .kpi .sub {
+  line-height: 1.35;
+}
+.dashboard-kpis .kpi-saldo {
+  border-color: rgba(25, 160, 132, .32) !important;
+  background:
+    linear-gradient(135deg, rgba(255,255,255,.98), rgba(214,237,250,.72)),
+    radial-gradient(circle at 96% 10%, rgba(127,224,108,.28), transparent 32%);
+  box-shadow: 0 18px 42px rgba(0, 56, 101, .10);
+}
+.dashboard-kpis .kpi-saldo::before {
+  height: 5px;
+  background: linear-gradient(90deg, var(--verde), var(--verde-claro), var(--azul-claro));
+}
+.dashboard-kpis .kpi-saldo::after {
+  right: -34px;
+  top: -34px;
+  width: 132px;
+  height: 132px;
+  opacity: .95;
+  background: radial-gradient(circle, rgba(127,224,108,.30), rgba(50,166,230,.10) 48%, rgba(50,166,230,0) 70%);
+}
+.dashboard-kpis .kpi-saldo .rotulo {
+  color: var(--verde);
+  letter-spacing: .8px;
+}
+.dashboard-kpis .kpi-saldo .valor {
+  font-size: clamp(38px, 4.15vw, 56px);
+  line-height: .94;
+  letter-spacing: -2.2px;
+  color: var(--azul-escuro);
+  margin-top: 10px;
+}
+.dashboard-kpis .kpi-saldo .sub {
+  font-size: 13px;
+  font-weight: 700;
+}
+
+body[data-tema="escuro"] .dashboard-kpis .kpi-saldo {
+  background:
+    linear-gradient(135deg, rgba(8,42,77,.96), rgba(0,56,101,.82)),
+    radial-gradient(circle at 96% 10%, rgba(127,224,108,.20), transparent 34%);
+  border-color: rgba(127,224,108,.30) !important;
+}
+body[data-tema="escuro"] .dashboard-kpis .kpi-saldo .valor,
+body[data-tema="escuro"] .dashboard-kpis .kpi-saldo .sub {
+  color: #fff;
+}
+body[data-tema="escuro"] .dashboard-kpis .kpi-saldo .rotulo {
+  color: var(--verde-claro);
+}
+
+@media (max-width: 1180px) {
+  .dashboard-kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+  .dashboard-kpis .kpi-saldo {
+    grid-column: span 2;
+  }
+}
+@media (max-width: 820px) {
+  .dashboard-kpis {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .dashboard-kpis .kpi-saldo {
+    grid-column: 1 / -1;
+  }
+}
+@media (max-width: 560px) {
+  .dashboard-kpis {
+    grid-template-columns: 1fr !important;
+  }
+  .dashboard-kpis .kpi,
+  .dashboard-kpis .kpi-saldo {
+    grid-column: 1 / -1;
+  }
+  .dashboard-kpis .kpi-saldo .valor {
+    font-size: clamp(34px, 12vw, 46px);
+    letter-spacing: -1.6px;
+  }
+}

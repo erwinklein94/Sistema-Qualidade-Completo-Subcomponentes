@@ -804,8 +804,9 @@ function hero() {
   return '';
 }
 
-function kpi(title, value, sub, color = 'var(--azul-claro)') {
-  return `<div class="kpi" style="--kpi-cor:${color}"><div class="rotulo">${esc(title)}</div><div class="valor">${esc(value)}</div><div class="sub">${esc(sub)}</div></div>`;
+function kpi(title, value, sub, color = 'var(--azul-claro)', classes = '') {
+  const extra = classes ? ` ${classes}` : '';
+  return `<div class="kpi${extra}" style="--kpi-cor:${color}"><div class="rotulo">${esc(title)}</div><div class="valor" title="${esc(value)}">${esc(value)}</div><div class="sub">${esc(sub)}</div></div>`;
 }
 function panel(title, sub, body, extra = '') {
   return `<div class="card ${extra}"><div class="card-titulo"><span class="acento">${esc(title)}</span>${sub ? `<span class="card-sub">${esc(sub)}</span>` : ''}</div>${body}</div>`;
@@ -866,13 +867,13 @@ function renderDashboard() {
   return `${hero()}
     <div class="barra-filtros barra-filtros-dashboard">${dashboardFilters(allRows)}</div>
     <div class="periodo-dashboard-info"><strong>${esc(periodoLabel)}</strong><span>${esc(periodoInfo)}</span></div>
-    <div class="grid-kpi">
-      ${kpi('Subcomponentes', fmt(componentes), `${fmt(lotes)} lotes filtrados`, 'var(--azul-claro)')}
-      ${kpi('Saldo em estoque', fmt(totalSaldo), periodoAtivo ? 'saldo dos lotes no período' : 'saldo atual consolidado', 'var(--verde)')}
-      ${kpi('Inspecionado', fmt(totalInspecionado), `${fmt(inspecoesFiltradas.length)} registros filtrados`, 'var(--verde-claro)')}
-      ${kpi('Não conformidades', fmt(totalNc), `taxa ${pct(totalInspecionado ? totalNc / totalInspecionado * 100 : 0)}`, 'var(--amarelo)')}
-      ${kpi('Pendentes', fmt(pendentes), periodoAtivo ? 'lotes pendentes no período' : 'lotes com saldo sem inspeção', 'var(--erro)')}
-      ${kpi('Empresas', fmt(empresasFiltradas), periodoAtivo ? 'empresas nos filtros' : 'empresas nos lotes filtrados', 'var(--azul-escuro)')}
+    <div class="grid-kpi dashboard-kpis" aria-label="Indicadores principais do dashboard">
+      ${kpi('Subcomponentes', fmt(componentes), `${fmt(lotes)} lotes filtrados`, 'var(--azul-claro)', 'kpi-compacto')}
+      ${kpi('Saldo em estoque', fmt(totalSaldo), periodoAtivo ? 'saldo dos lotes no período' : 'saldo atual consolidado', 'var(--verde)', 'kpi-saldo')}
+      ${kpi('Inspecionado', fmt(totalInspecionado), `${fmt(inspecoesFiltradas.length)} registros filtrados`, 'var(--verde-claro)', 'kpi-compacto')}
+      ${kpi('Não conformidades', fmt(totalNc), `taxa ${pct(totalInspecionado ? totalNc / totalInspecionado * 100 : 0)}`, 'var(--amarelo)', 'kpi-compacto')}
+      ${kpi('Pendentes', fmt(pendentes), periodoAtivo ? 'lotes pendentes no período' : 'lotes com saldo sem inspeção', 'var(--erro)', 'kpi-compacto')}
+      ${kpi('Empresas', fmt(empresasFiltradas), periodoAtivo ? 'empresas nos filtros' : 'empresas nos lotes filtrados', 'var(--azul-escuro)', 'kpi-compacto')}
     </div>
     <div class="grid-graficos">
       ${panel('Estoque por subcomponente', periodoAtivo ? 'Top 10 por saldo no período' : 'Top 10 por saldo atual', barList(estoquePorComp, 'un.'))}
