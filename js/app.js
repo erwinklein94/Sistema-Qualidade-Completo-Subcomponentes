@@ -792,7 +792,7 @@ function topActions() {
     <button class="btn btn-secundario btn-sm topo-action" id="exportExcelBtn" type="button" title="Exportar dashboard filtrado para Excel">Excel</button>
     <button class="btn btn-secundario btn-sm topo-action" id="exportPdfBtn" type="button" title="Exportar dashboard filtrado para PDF">PDF</button>` : '';
   return `
-    <button class="btn btn-secundario btn-sm topo-action" id="hubBtn" type="button" title="Voltar para o Hub de Qualidade">HUB</button>
+    <button class="btn btn-secundario btn-sm topo-action hub-link" id="hubBtn" type="button" title="Voltar para o Hub de Qualidade">HUB</button>
     <button class="btn btn-verde btn-sm topo-action" id="themeBtn" type="button">◐<span>Tema escuro</span></button>
     ${window.Auth ? '<span class="usuario-auth" id="areaUsuario"></span>' : ''}
     <button class="btn btn-secundario btn-sm topo-action" id="refreshBtn" type="button" title="Recarregar dados do Supabase">✓<span>Atualizar</span></button>
@@ -1253,7 +1253,7 @@ function barList(data, suffix = '') {
   const max = Math.max(...data.map((d) => num(d.value)), 1);
   return `<div class="chart-list">${data.map((d, i) => {
     const width = Math.max(2, (num(d.value) / max) * 100);
-    const colors = ['var(--azul-claro)', 'var(--verde)', 'var(--verde-claro)', 'var(--amarelo)', 'var(--roxo)'];
+    const colors = ['var(--azul-escuro)', 'var(--azul-claro)', 'var(--verde)', 'var(--verde-claro)', 'var(--amarelo)', 'var(--laranja)', 'var(--roxo)'];
     return `<div class="chart-row"><div class="chart-label" title="${esc(d.name)}">${esc(d.name)}</div><div class="chart-track"><div class="chart-fill" style="width:${width}%;background:${colors[i % colors.length]}"></div></div><div class="chart-value">${fmt(d.value)} ${esc(suffix)}</div></div>`;
   }).join('')}</div>`;
 }
@@ -1261,7 +1261,7 @@ function donut(data) {
   if (!data.length) return empty('Sem dados para exibir');
   const total = data.reduce((s, d) => s + num(d.value), 0) || 1;
   let deg = 0;
-  const colors = ['var(--azul-claro)', 'var(--verde)', 'var(--amarelo)', 'var(--erro)', 'var(--verde-claro)', 'var(--roxo)'];
+  const colors = ['var(--azul-escuro)', 'var(--azul-claro)', 'var(--verde)', 'var(--amarelo)', 'var(--erro)', 'var(--verde-claro)', 'var(--roxo)'];
   const stops = data.map((d, i) => {
     const start = deg;
     deg += (num(d.value) / total) * 360;
